@@ -15,6 +15,9 @@ from .industry_sectors import (
     get_sector_index
 )
 
+from .backtest_report_config import ReportDirectoryConfig
+from .strategy_config import StrategyConfig, strategy_config
+
 __all__ = [
     'INDUSTRY_SECTORS',
     'INDUSTRY_SECTORS_COUNT', 
@@ -24,5 +27,8 @@ __all__ = [
     'get_industry_categories',
     'get_sectors_by_category',
     'search_sectors',
-    'get_sector_index'
+    'get_sector_index',
+    'ReportDirectoryConfig',
+    'StrategyConfig',
+    'strategy_config'
 ]

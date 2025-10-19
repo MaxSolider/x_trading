@@ -13,6 +13,7 @@ from .static import (
     search_sectors,
     get_sector_index
 )
+from .services import SectorSignalService, SignalReportGenerator
 
 __all__ = [
     'INDUSTRY_SECTORS',
@@ -23,5 +24,7 @@ __all__ = [
     'get_industry_categories',
     'get_sectors_by_category',
     'search_sectors',
-    'get_sector_index'
+    'get_sector_index',
+    'SectorSignalService',
+    'SignalReportGenerator'
 ]

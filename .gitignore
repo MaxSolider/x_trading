@@ -202,6 +202,3 @@ backup/
 # *.pdf
 # *.doc
 # *.docx
-
-# 重命名脚本（一次性使用）
-rename_to_chinese.py

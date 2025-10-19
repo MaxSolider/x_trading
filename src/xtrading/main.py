@@ -4,6 +4,8 @@ AKShare股票日线数据查询工具 - 主程序
 
 import time
 from .strategies.industry_sector.backtest import StrategyBacktest
+from .services.sector_signal_service import SectorSignalService
+from .services.signal_report_generator import SignalReportGenerator
 from .static import INDUSTRY_SECTORS, INDUSTRY_SECTORS_COUNT,INDUSTRY_CATEGORIES
 
 
@@ -238,6 +240,46 @@ def category_backtest_test():
         print("=" * 80)
 
 
+def sector_signal_service_test():
+    # 初始化服务
+    service = SectorSignalService()
+    report_generator = SignalReportGenerator()
+    print("✅ 服务初始化成功")
+
+    # 测试板块列表
+    test_sectors = INDUSTRY_SECTORS
+    print(f"\n📊 测试板块: {test_sectors}")
+
+    print("\n🔍 测试1: 使用默认参数和默认日期范围")
+    start_time = time.time()
+
+    results = service.calculate_sector_signals(
+        sector_list=test_sectors
+    )
+
+    end_time = time.time()
+    duration = end_time - start_time
+
+    if results:
+        print(f"✅ 测试1通过: 耗时 {duration:.2f} 秒")
+        
+        # 生成综合分析报告
+        print("\n📄 生成综合分析报告...")
+        report_file = report_generator.generate_report(results)
+        
+        if report_file:
+            print(f"✅ 综合分析报告已生成: {report_file}")
+            
+            # 显示报告预览
+            print("\n📋 报告预览:")
+            report_generator.print_report_preview(results)
+        else:
+            print("❌ 生成综合分析报告失败")
+            return False
+    else:
+        print("❌ 测试1失败: 无结果")
+        return False
+
 def main():
     """主函数"""
     print("🚀 XTrading 策略回测")
@@ -246,8 +288,10 @@ def main():
     # category_backtest_test()
 
     # 对所有板块进行回测
-    all_industries_test()
+    # all_industries_test()
 
+    # 测试板块信号
+    sector_signal_service_test()
 
 if __name__ == "__main__":
     main()

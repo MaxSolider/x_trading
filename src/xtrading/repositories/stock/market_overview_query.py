@@ -5,8 +5,8 @@
 
 import akshare as ak
 import pandas as pd
-from typing import Optional, Dict, Any
-from ...utils.akshare_rate_limiter import rate_limit_manual
+from typing import Optional, Dict
+from src.xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
 
 
 class MarketOverviewQuery:

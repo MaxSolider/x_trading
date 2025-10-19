@@ -82,7 +82,7 @@ def run_main_program():
     
     # 配置pandas全局显示选项
     try:
-        from src.xtrading.utils.pandas_config import configure_pandas_display
+        from src.xtrading.utils.pandas.pandas_config import configure_pandas_display
         configure_pandas_display()
     except ImportError as e:
         print(f"⚠️ 无法加载pandas配置: {e}")

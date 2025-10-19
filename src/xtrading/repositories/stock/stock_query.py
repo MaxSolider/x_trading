@@ -6,10 +6,9 @@
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-from ...utils.stock_code_utils import StockCodeUtils
-from ...utils.data_output_utils import DataOutputUtils
-from ...utils.akshare_rate_limiter import rate_limit_manual
+from typing import Optional
+from src.xtrading.utils.rules.stock_code_utils import StockCodeUtils
+from src.xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
 
 class StockQuery:
     """个股信息查询类"""
@@ -17,7 +16,6 @@ class StockQuery:
     def __init__(self):
         """初始化查询类"""
         self.stock_utils = StockCodeUtils()
-        self.data_output = DataOutputUtils()
         print("✅ 个股信息查询服务初始化成功")
     
     def get_stock_basic_info(self, symbol: str) -> Optional[pd.DataFrame]:

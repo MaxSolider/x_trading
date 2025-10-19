@@ -138,3 +138,18 @@ def get_sector_index(sector_name):
         return INDUSTRY_SECTORS.index(sector_name)
     except ValueError:
         return -1
+
+def get_industry_category(industry_name: str) -> str:
+    """
+    根据行业名称获取对应的分类
+    
+    Args:
+        industry_name (str): 行业板块名称
+        
+    Returns:
+        str: 行业分类名称
+    """
+    for category, sectors in INDUSTRY_CATEGORIES.items():
+        if industry_name in sectors:
+            return category
+    return "其他"  # 如果找不到分类，默认为"其他"
