@@ -388,7 +388,7 @@ class StrategyBacktest:
         category = self.get_industry_category(industry_name)
         
         # 创建新的目录结构
-        reports_dir = f"backtest/reports/{backtest_date}"
+        reports_dir = f"backtest/reports/{backtest_date}/sector"
         images_dir = f"backtest/images/{backtest_date}"
         os.makedirs(reports_dir, exist_ok=True)
         os.makedirs(images_dir, exist_ok=True)
@@ -424,7 +424,7 @@ class StrategyBacktest:
         # 如果没有提供目录，创建新的回测结果目录
         if reports_dir is None:
             backtest_date = datetime.now().strftime('%Y%m%d')  # 只使用日期，不包含时间
-            reports_dir = f"backtest/reports/{backtest_date}"
+            reports_dir = f"backtest/reports/{backtest_date}/sector"
             os.makedirs(reports_dir, exist_ok=True)
         
         # 生成带时间戳的文件名
@@ -432,8 +432,8 @@ class StrategyBacktest:
         
         # 生成图片的相对路径
         backtest_date = datetime.now().strftime('%Y%m%d')
-        daily_chart_path = f"../../images/{backtest_date}/{category}_{industry_name}_每日收益率_{timestamp}.png"
-        cumulative_chart_path = f"../../images/{backtest_date}/{category}_{industry_name}_累计收益率_{timestamp}.png"
+        daily_chart_path = f"../../../images/{backtest_date}/{category}_{industry_name}_每日收益率_{timestamp}.png"
+        cumulative_chart_path = f"../../../images/{backtest_date}/{category}_{industry_name}_累计收益率_{timestamp}.png"
         
         try:
             with open(filename, 'w', encoding='utf-8') as f:
@@ -1347,7 +1347,7 @@ class StrategyBacktest:
         
         # 创建整体回测报告目录
         backtest_date = datetime.now().strftime('%Y%m%d')
-        summary_dir = f"backtest/reports/{backtest_date}"
+        summary_dir = f"backtest/reports/{backtest_date}/summary"
         os.makedirs(summary_dir, exist_ok=True)
         
         # 生成带时间戳的文件名

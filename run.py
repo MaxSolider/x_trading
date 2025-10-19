@@ -50,9 +50,29 @@ def main():
     print("🚀 AKShare股票日线数据查询工具")
     print("=" * 50)
     
-    # 检查虚拟环境
-    check_and_create_venv()
-    
+    # 检查是否已经在虚拟环境中运行
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("✅ 已在虚拟环境中运行")
+        # 已经在虚拟环境中，直接运行主程序
+        run_main_program()
+    else:
+        # 检查虚拟环境
+        check_and_create_venv()
+        
+        # 激活虚拟环境
+        venv_python = os.path.join(os.path.dirname(__file__), 'venv', 'bin', 'python')
+        if os.path.exists(venv_python):
+            print("🔄 使用虚拟环境中的Python...")
+            # 使用虚拟环境中的Python重新运行脚本
+            subprocess.run([venv_python, __file__])
+            return
+        else:
+            print("⚠️ 虚拟环境不存在，使用系统Python运行")
+            run_main_program()
+
+
+def run_main_program():
+    """运行主程序"""
     # 升级AKShare
     upgrade_akshare()
     print()
@@ -69,7 +89,7 @@ def main():
     
     # 导入并运行主程序
     try:
-        from tests.repository_test import main as app_main
+        from src.xtrading.main import main as app_main
         app_main()
     except ImportError as e:
         print(f"❌ 导入错误: {e}")
