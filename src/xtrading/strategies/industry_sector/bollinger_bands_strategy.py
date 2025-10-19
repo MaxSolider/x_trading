@@ -52,11 +52,12 @@ class IndustryBollingerBandsStrategy:
         upper_band = sma + (std * std_dev)
         lower_band = sma - (std * std_dev)
         
-        # 计算布林带宽度
-        bb_width = (upper_band - lower_band) / sma
+        # 计算布林带宽度（避免除零错误）
+        bb_width = np.where(sma != 0, (upper_band - lower_band) / sma, 0)
         
-        # 计算价格在布林带中的位置
-        bb_position = (data[close_col] - lower_band) / (upper_band - lower_band)
+        # 计算价格在布林带中的位置（避免除零错误）
+        band_width = upper_band - lower_band
+        bb_position = np.where(band_width != 0, (data[close_col] - lower_band) / band_width, 0.5)
         
         # 创建结果DataFrame
         result = data.copy()

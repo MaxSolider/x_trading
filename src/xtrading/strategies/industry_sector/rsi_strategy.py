@@ -52,8 +52,8 @@ class IndustryRSIStrategy:
         avg_gains = gains.rolling(window=period).mean()
         avg_losses = losses.rolling(window=period).mean()
         
-        # 计算RS
-        rs = avg_gains / avg_losses
+        # 计算RS（避免除零错误）
+        rs = np.where(avg_losses != 0, avg_gains / avg_losses, np.inf)
         
         # 计算RSI
         rsi = 100 - (100 / (1 + rs))

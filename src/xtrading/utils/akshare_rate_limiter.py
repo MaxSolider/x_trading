@@ -58,7 +58,6 @@ class AKShareRateLimiter:
                 
                 if elapsed_time < self._global_interval:
                     wait_time = self._global_interval - elapsed_time
-                    print(f"⏱️ AKShare接口需要等待 {wait_time:.2f} 秒")
                     time.sleep(wait_time)
             
             # 更新全局最后调用时间
