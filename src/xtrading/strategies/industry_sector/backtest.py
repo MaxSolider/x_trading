@@ -676,7 +676,7 @@ class StrategyBacktest:
         # 如果没有提供目录，创建新的回测结果目录
         if images_dir is None:
             backtest_date = datetime.now().strftime('%Y%m%d')  # 只使用日期，不包含时间
-            images_dir = f"backtest/images/{backtest_date}"
+            images_dir = f"reports/images/{backtest_date}"
             os.makedirs(images_dir, exist_ok=True)
         
         # 计算板块收益率数据
@@ -718,7 +718,7 @@ class StrategyBacktest:
         # 如果没有提供目录，创建新的回测结果目录
         if images_dir is None:
             backtest_date = datetime.now().strftime('%Y%m%d')  # 只使用日期，不包含时间
-            images_dir = f"backtest/images/{backtest_date}"
+            images_dir = f"reports/images/{backtest_date}"
             os.makedirs(images_dir, exist_ok=True)
         
         # 计算板块收益率数据

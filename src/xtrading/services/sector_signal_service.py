@@ -13,6 +13,7 @@ from ..strategies.industry_sector.moving_average_strategy import IndustryMovingA
 from ..repositories.stock.industry_info_query import IndustryInfoQuery
 from ..static.industry_sectors import get_industry_category
 from ..static.strategy_config import StrategyConfig
+from ..utils.docs.signal_report_generator import SignalReportGenerator
 
 
 class SectorSignalService:
@@ -28,9 +29,8 @@ class SectorSignalService:
         
         # 支持的策略列表
         self.supported_strategies = ["MACD", "RSI", "BollingerBands", "MovingAverage"]
-        
-        print("✅ 板块信号计算服务初始化成功")
-    
+        self.report_generator = SignalReportGenerator()
+
     def calculate_sector_signals(self, sector_list: List[str], 
                                strategies: List[str] = None,
                                start_date: str = None, 
@@ -66,10 +66,7 @@ class SectorSignalService:
             default_start, default_end = StrategyConfig.get_default_date_range()
             start_date = start_date or default_start
             end_date = end_date or default_end
-        
-        print(f"🔍 开始计算 {len(sector_list)} 个板块的 {len(strategies)} 种策略信号...")
-        print(f"📅 日期范围: {start_date} 至 {end_date}")
-        
+
         results = {
             'calculation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'total_sectors': len(sector_list),
@@ -80,8 +77,7 @@ class SectorSignalService:
         
         # 为每个板块计算信号
         for sector in sector_list:
-            print(f"📊 正在计算 {sector} 的信号...")
-            
+
             sector_result = {
                 'sector_name': sector,
                 'category': get_industry_category(sector),
@@ -120,8 +116,180 @@ class SectorSignalService:
             
             results['sector_signals'][sector] = sector_result
         
-        print(f"✅ 板块信号计算完成，共处理 {len(sector_list)} 个板块")
         return results
+
+    def print_signal_summary(self, results: Dict[str, Any]) -> Optional[str]:
+        """
+        生成并输出板块信号总结报告（服务层完成统计聚合，生成器仅负责文档拼接）
+        
+        Args:
+            results: 计算得到的信号原始结果（calculate_sector_signals返回值）
+
+        Returns:
+            Optional[str]: 生成的报告文件路径
+        """
+        if not results:
+            print("❌ 无结果数据可生成报告")
+            return None
+        
+        # 1) 元信息
+        meta = {
+            'calculation_time': results.get('calculation_time'),
+            'total_sectors': results.get('total_sectors', 0),
+            'strategies_used': results.get('strategies_used', []),
+            'date_range': results.get('date_range', {})
+        }
+        
+        strategies_used = meta['strategies_used']
+        sector_signals = results.get('sector_signals', {})
+        
+        # 2) 整体汇总统计
+        total_signals = {'买入': 0, '卖出': 0, '持有': 0, '强势买入': 0, '强势卖出': 0, '错误': 0}
+        successful_sectors = 0
+        failed_sectors = 0
+        
+        # 策略信号分布统计
+        strategy_signal_counts = {s: {'买入': 0, '卖出': 0, '持有': 0, '强势买入': 0, '强势卖出': 0, '错误': 0} for s in strategies_used}
+        
+        def translate(signal_type: str) -> str:
+            mapping = {
+                'BUY': '买入',
+                'SELL': '卖出',
+                'HOLD': '持有',
+                'STRONG_BUY': '强势买入',
+                'STRONG_SELL': '强势卖出',
+                'ERROR': '错误'
+            }
+            return mapping.get(signal_type, signal_type)
+        
+        for sector_name, sector_data in sector_signals.items():
+            if 'error' in sector_data:
+                failed_sectors += 1
+                continue
+            successful_sectors += 1
+            strategies = sector_data.get('strategies', {})
+            for strategy in strategies_used:
+                if strategy in strategies:
+                    sd = strategies[strategy]
+                    if 'error' in sd:
+                        total_signals['错误'] += 1
+                        strategy_signal_counts[strategy]['错误'] += 1
+                    else:
+                        t = translate(sd.get('signal_type', 'HOLD'))
+                        total_signals[t] += 1
+                        strategy_signal_counts[strategy][t] += 1
+        
+        overall_summary = {
+            'successful_sectors': successful_sectors,
+            'failed_sectors': failed_sectors,
+            'total_signals': total_signals
+        }
+        
+        # 3) 板块明细表数据
+        sector_rows = []
+        for sector_name, sector_data in sector_signals.items():
+            if 'error' in sector_data:
+                # 标记错误行
+                sector_rows.append({
+                    'sector_name': sector_name,
+                    'category': '错误',
+                    'signals': {s: '❌ 错误' for s in strategies_used},
+                    'total_buy_sell_signals': 0
+                })
+                continue
+            category = sector_data.get('category', 'Unknown')
+            row_signals = {}
+            total_buy_sell_signals = 0
+            strategies = sector_data.get('strategies', {})
+            for strategy in strategies_used:
+                if strategy in strategies:
+                    sd = strategies[strategy]
+                    if 'error' in sd:
+                        row_signals[strategy] = '❌ 错误'
+                    else:
+                        st = sd.get('signal_type', 'HOLD')
+                        if st == 'HOLD':
+                            row_signals[strategy] = '-'
+                        else:
+                            translated_signal = translate(st)
+                            row_signals[strategy] = translated_signal
+                            # 统计买入卖出信号数量
+                            if translated_signal in ['买入', '卖出']:
+                                total_buy_sell_signals += 1
+                else:
+                    row_signals[strategy] = '-'
+            sector_rows.append({
+                'sector_name': sector_name,
+                'category': category,
+                'signals': row_signals,
+                'total_buy_sell_signals': total_buy_sell_signals
+            })
+        
+        # 按买入卖出信号总量降序排序
+        sector_rows.sort(key=lambda x: x['total_buy_sell_signals'], reverse=True)
+        
+        sector_details = {
+            'strategies_used': strategies_used,
+            'rows': sector_rows
+        }
+        
+        # 4) 分类分析数据
+        categories = {}
+        for sector_name, sector_data in sector_signals.items():
+            if 'error' in sector_data:
+                continue
+            category = sector_data.get('category', 'Unknown')
+            if category not in categories:
+                categories[category] = {
+                    'sectors': [],
+                    'strategy_signals': {s: {'买入': 0, '卖出': 0} for s in strategies_used}
+                }
+            categories[category]['sectors'].append(sector_name)
+            strategies = sector_data.get('strategies', {})
+            for strategy in strategies_used:
+                if strategy in strategies:
+                    sd = strategies[strategy]
+                    if 'error' in sd:
+                        continue
+                    t = translate(sd.get('signal_type', 'HOLD'))
+                    if t in ['买入', '卖出']:
+                        categories[category]['strategy_signals'][strategy][t] += 1
+        
+        # 计算每个分类的买入卖出信号总量，用于排序
+        for category, stats in categories.items():
+            total_buy_sell_signals = 0
+            for strategy in strategies_used:
+                total_buy_sell_signals += stats['strategy_signals'][strategy]['买入'] + stats['strategy_signals'][strategy]['卖出']
+            stats['total_buy_sell_signals'] = total_buy_sell_signals
+        
+        category_analysis = {
+            'strategies_used': strategies_used,
+            'categories': categories
+        }
+        
+        # 5) 附录数据
+        category_sectors = {}
+        for sector_name, sector_data in sector_signals.items():
+            if 'error' in sector_data:
+                continue
+            category = sector_data.get('category', 'Unknown')
+            category_sectors.setdefault(category, []).append(sector_name)
+        appendix = {'category_sectors': category_sectors}
+        
+        # 6) 汇总为sections传给生成器
+        sections = {
+            'meta': meta,
+            'overall_summary': overall_summary,
+            'strategy_distribution': {
+                'strategies_used': strategies_used,
+                'strategy_signal_counts': strategy_signal_counts
+            },
+            'category_analysis': category_analysis,
+            'sector_details': sector_details,
+            'appendix': appendix
+        }
+        
+        return self.report_generator.generate_precomputed_report(sections)
     
     def _get_historical_data(self, sector_name: str, start_date: str = None, end_date: str = None) -> Optional[pd.DataFrame]:
         """
@@ -281,71 +449,3 @@ class SectorSignalService:
             })
         
         return signal_info
-    
-    def get_signal_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        生成信号汇总统计
-        
-        Args:
-            results: 信号计算结果
-            
-        Returns:
-            Dict: 汇总统计信息
-        """
-        if not results or 'sector_signals' not in results:
-            return {}
-        
-        summary = {
-            'total_sectors': results['total_sectors'],
-            'strategies_used': results['strategies_used'],
-            'calculation_time': results['calculation_time'],
-            'date_range': results.get('date_range', {}),
-            'signal_statistics': {},
-            'sector_summary': {}
-        }
-        
-        # 统计各策略的信号分布
-        for strategy in results['strategies_used']:
-            signal_counts = {'BUY': 0, 'SELL': 0, 'STRONG_BUY': 0, 'STRONG_SELL': 0, 'HOLD': 0, 'ERROR': 0}
-            
-            for sector_name, sector_data in results['sector_signals'].items():
-                if 'strategies' in sector_data and strategy in sector_data['strategies']:
-                    strategy_data = sector_data['strategies'][strategy]
-                    if 'error' in strategy_data:
-                        signal_counts['ERROR'] += 1
-                    else:
-                        signal_type = strategy_data.get('signal_type', 'HOLD')
-                        signal_counts[signal_type] += 1
-            
-            summary['signal_statistics'][strategy] = signal_counts
-        
-        # 统计各板块的信号情况
-        for sector_name, sector_data in results['sector_signals'].items():
-            sector_summary = {
-                'category': sector_data.get('category', 'Unknown'),
-                'total_strategies': len(results['strategies_used']),
-                'successful_strategies': 0,
-                'failed_strategies': 0,
-                'buy_signals': 0,
-                'sell_signals': 0,
-                'hold_signals': 0
-            }
-            
-            if 'strategies' in sector_data:
-                for strategy_name, strategy_data in sector_data['strategies'].items():
-                    if 'error' in strategy_data:
-                        sector_summary['failed_strategies'] += 1
-                    else:
-                        sector_summary['successful_strategies'] += 1
-                        signal_type = strategy_data.get('signal_type', 'HOLD')
-                        if signal_type in ['BUY', 'STRONG_BUY']:
-                            sector_summary['buy_signals'] += 1
-                        elif signal_type in ['SELL', 'STRONG_SELL']:
-                            sector_summary['sell_signals'] += 1
-                        else:
-                            sector_summary['hold_signals'] += 1
-            
-            summary['sector_summary'][sector_name] = sector_summary
-        
-        return summary
-    
