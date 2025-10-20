@@ -43,7 +43,7 @@ class AnomalyCalculator:
         
         # 找到收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in hist_data.columns:
                 close_col = col
                 break
@@ -153,7 +153,7 @@ class AnomalyCalculator:
             return strategy_metrics
         
         # 计算整体期间收益率作为基准
-        close_col = '收盘价' if '收盘价' in hist_data.columns else 'close'
+        close_col = '收盘' if '收盘' in hist_data.columns else ('收盘价' if '收盘价' in hist_data.columns else 'close')
         daily_returns = ReturnCalculator.calculate_daily_returns(hist_data[close_col])
         hist_data['daily_return'] = daily_returns
         overall_returns = daily_returns.dropna()

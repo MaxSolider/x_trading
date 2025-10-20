@@ -416,7 +416,7 @@ class SectorSignalService:
         elif strategy_name == "BollingerBands":
             # 获取收盘价
             close_price = None
-            for col in ['收盘价', 'close', 'Close']:
+            for col in ['收盘', '收盘价', 'close', 'Close']:
                 if col in latest_data.index:
                     close_price = float(latest_data[col])
                     break
@@ -434,7 +434,7 @@ class SectorSignalService:
         elif strategy_name == "MovingAverage":
             # 获取收盘价
             close_price = None
-            for col in ['收盘价', 'close', 'Close']:
+            for col in ['收盘', '收盘价', 'close', 'Close']:
                 if col in latest_data.index:
                     close_price = float(latest_data[col])
                     break

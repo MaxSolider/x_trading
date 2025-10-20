@@ -35,7 +35,7 @@ class IndustryMovingAverageStrategy:
         
         # 确保有收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in data.columns:
                 close_col = col
                 break
@@ -90,7 +90,7 @@ class IndustryMovingAverageStrategy:
         
         # 确保有收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in data.columns:
                 close_col = col
                 break
@@ -199,7 +199,7 @@ class IndustryMovingAverageStrategy:
             
             analysis_result = {
                 'industry_name': industry_name,
-                'latest_close': latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0))),
+                'latest_close': latest_data.get('收盘', latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0)))),
                 'latest_sma_short': latest_data['SMA_Short'],
                 'latest_sma_medium': latest_data['SMA_Medium'],
                 'latest_sma_long': latest_data['SMA_Long'],
@@ -214,7 +214,7 @@ class IndustryMovingAverageStrategy:
                 'short_period': short_period,
                 'medium_period': medium_period,
                 'long_period': long_period,
-                'recent_signals': recent_signals[['日期', '收盘价', 'SMA_Short', 'SMA_Medium', 'SMA_Long', 'Signal', 'Signal_Type', 'MA_Trend']].to_dict('records') if not recent_signals.empty else [],
+                'recent_signals': recent_signals[['日期', '收盘', 'SMA_Short', 'SMA_Medium', 'SMA_Long', 'Signal', 'Signal_Type', 'MA_Trend']].to_dict('records') if not recent_signals.empty else [],
                 'data_points': len(signal_data),
                 'analysis_date': latest_data.get('日期', 'Unknown')
             }
@@ -284,4 +284,4 @@ class IndustryMovingAverageStrategy:
         if analysis_result['recent_signals']:
             print(f"\n📈 最近交易信号:")
             for signal in analysis_result['recent_signals']:
-                print(f"  {signal['日期']}: {signal['Signal_Type']} (收盘价: {signal['收盘价']:.2f}, 趋势: {signal['MA_Trend']})")
+                print(f"  {signal['日期']}: {signal['Signal_Type']} (收盘价: {signal['收盘']:.2f}, 趋势: {signal['MA_Trend']})")

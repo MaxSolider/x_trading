@@ -33,7 +33,7 @@ class IndustryBollingerBandsStrategy:
         
         # 确保有收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in data.columns:
                 close_col = col
                 break
@@ -86,7 +86,7 @@ class IndustryBollingerBandsStrategy:
         
         # 确保有收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in data.columns:
                 close_col = col
                 break
@@ -187,7 +187,7 @@ class IndustryBollingerBandsStrategy:
             
             analysis_result = {
                 'industry_name': industry_name,
-                'latest_close': latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0))),
+                'latest_close': latest_data.get('收盘', latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0)))),
                 'latest_sma': latest_data['SMA'],
                 'latest_upper_band': latest_data['Upper_Band'],
                 'latest_lower_band': latest_data['Lower_Band'],
@@ -200,7 +200,7 @@ class IndustryBollingerBandsStrategy:
                 'bb_position_mean': bb_position_mean,
                 'period': period,
                 'std_dev': std_dev,
-                'recent_signals': recent_signals[['日期', '收盘价', 'SMA', 'Upper_Band', 'Lower_Band', 'Signal', 'Signal_Type', 'BB_Status']].to_dict('records') if not recent_signals.empty else [],
+                'recent_signals': recent_signals[['日期', '收盘', 'SMA', 'Upper_Band', 'Lower_Band', 'Signal', 'Signal_Type', 'BB_Status']].to_dict('records') if not recent_signals.empty else [],
                 'data_points': len(signal_data),
                 'analysis_date': latest_data.get('日期', 'Unknown')
             }
@@ -269,4 +269,4 @@ class IndustryBollingerBandsStrategy:
         if analysis_result['recent_signals']:
             print(f"\n📈 最近交易信号:")
             for signal in analysis_result['recent_signals']:
-                print(f"  {signal['日期']}: {signal['Signal_Type']} (收盘价: {signal['收盘价']:.2f}, 状态: {signal['BB_Status']})")
+                print(f"  {signal['日期']}: {signal['Signal_Type']} (收盘价: {signal['收盘']:.2f}, 状态: {signal['BB_Status']})")

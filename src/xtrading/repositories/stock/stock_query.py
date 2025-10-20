@@ -7,8 +7,8 @@ import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
-from src.xtrading.utils.rules.stock_code_utils import StockCodeUtils
-from src.xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
+from xtrading.utils.rules.stock_code_utils import StockCodeUtils
+from xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
 
 class StockQuery:
     """个股信息查询类"""

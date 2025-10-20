@@ -6,7 +6,7 @@
 import akshare as ak
 import pandas as pd
 from typing import Optional
-from src.xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
+from xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
 
 
 class IndustryInfoQuery:
@@ -28,7 +28,7 @@ class IndustryInfoQuery:
             rate_limit_manual()
             
             # 获取行业板块列表
-            industry_names = ak.stock_board_industry_summary_ths()
+            industry_names = ak.stock_board_industry_name_em()
             print("✅ 成功获取行业板块列表")
             return industry_names
         except Exception as e:
@@ -89,7 +89,7 @@ class IndustryInfoQuery:
             rate_limit_manual()
             
             # 获取板块日频行情
-            hist_data = ak.stock_board_industry_index_ths(symbol=symbol, start_date=start_date, end_date=end_date)
+            hist_data = ak.stock_board_industry_hist_em(symbol=symbol, start_date=start_date, end_date=end_date, period='日k', adjust='qfq')
             return hist_data
         except Exception as e:
             print(f"❌ 获取板块 {symbol} 日频行情失败: {e}")

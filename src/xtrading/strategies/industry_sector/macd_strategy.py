@@ -34,7 +34,7 @@ class IndustryMACDStrategy:
         
         # 确保有收盘价列
         close_col = None
-        for col in ['收盘价', 'close', 'Close']:
+        for col in ['收盘', '收盘价', 'close', 'Close']:
             if col in data.columns:
                 close_col = col
                 break

@@ -6,7 +6,7 @@
 import akshare as ak
 import pandas as pd
 from typing import Optional
-from src.xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
+from xtrading.utils.limiter.akshare_rate_limiter import rate_limit_manual
 
 
 class ConceptInfoQuery:
