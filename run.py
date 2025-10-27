@@ -73,6 +73,14 @@ def main():
 
 def run_main_program():
     """运行主程序"""
+    # 设置线程清理
+    try:
+        from src.xtrading.utils.thread_cleanup import setup_thread_cleanup, suppress_thread_warnings
+        setup_thread_cleanup()
+        suppress_thread_warnings()
+    except ImportError:
+        pass
+    
     # 升级AKShare
     upgrade_akshare()
     print()

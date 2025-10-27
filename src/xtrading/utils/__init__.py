@@ -10,6 +10,8 @@ def _lazy_import():
     from .pandas.pandas_config import configure_pandas_display, reset_pandas_display, show_pandas_config
     from .limiter.akshare_rate_limiter import AKShareRateLimiter, rate_limit, rate_limit_manual, akshare_rate_limiter
     from .calculator import ReturnCalculator, RiskCalculator, StatisticsCalculator, TradingCalculator
+    from .date.date_utils import DateUtils
+    from .thread_cleanup import setup_thread_cleanup, suppress_thread_warnings
     
     return {
         'StockCodeUtils': StockCodeUtils,
@@ -23,7 +25,10 @@ def _lazy_import():
         'ReturnCalculator': ReturnCalculator,
         'RiskCalculator': RiskCalculator,
         'StatisticsCalculator': StatisticsCalculator,
-        'TradingCalculator': TradingCalculator
+        'TradingCalculator': TradingCalculator,
+        'DateUtils': DateUtils,
+        'setup_thread_cleanup': setup_thread_cleanup,
+        'suppress_thread_warnings': suppress_thread_warnings
     }
 
 # 延迟导入，避免在模块初始化时导入依赖numpy的模块
@@ -33,5 +38,8 @@ __all__ = [
     'ReturnCalculator',
     'RiskCalculator',
     'StatisticsCalculator',
-    'TradingCalculator'
+    'TradingCalculator',
+    'DateUtils',
+    'setup_thread_cleanup',
+    'suppress_thread_warnings'
 ]

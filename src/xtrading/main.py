@@ -4,9 +4,11 @@ AKShare股票日线数据查询工具 - 主程序
 
 import time
 from .strategies.industry_sector.backtest import StrategyBacktest
-from .services.sector_signal_service import SectorSignalService
+from .services.signal.sector_signal_service import SectorSignalService
+from .services.projection.projection_service import ProjectionService
+from .strategies.market_sentiment.market_sentiment_strategy import MarketSentimentStrategy
+from .utils.date.date_utils import DateUtils
 from .static import INDUSTRY_SECTORS, INDUSTRY_SECTORS_COUNT,INDUSTRY_CATEGORIES
-
 
 def single_industry_test():
     """测试单个行业板块的策略"""
@@ -269,6 +271,107 @@ def sector_signal_service_test():
         print("❌ 板块信号分析失败: 无结果")
         return False
 
+
+def projection_service_test():
+    """测试明日股市机会策略投影服务"""
+    print("🎯 明日股市机会策略投影服务测试")
+    print("=" * 80)
+    
+    try:
+        # 创建投影服务实例
+        projection_service = ProjectionService()
+        print("✅ 投影服务初始化成功")
+        
+        print("-" * 60)
+        
+        # 选择几个热门板块进行测试
+        hot_sectors = ["半导体", "消费电子", "银行", "证券"]
+        print(f"🎯 测试板块: {', '.join(hot_sectors)}")
+        
+        start_time = time.time()
+        
+        results1 = projection_service.calculate_tomorrow_opportunities(
+            sector_list=hot_sectors,
+            sector_strategies=["MACD", "RSI", "BollingerBands", "MovingAverage"],
+            stock_strategies=["TrendTracking", "Breakout", "OversoldRebound"],
+            min_buy_signals=1,  # 降低买入信号阈值
+            max_stocks_per_sector=20  # 每个板块最多分析5只股票
+        )
+        
+        end_time = time.time()
+
+        if results1:
+            # 打印汇总信息
+            projection_service.print_opportunity_summary(results1)
+            
+            # 生成详细报告
+            print("\n📄 生成详细分析报告...")
+            report_file1 = projection_service.generate_opportunity_report(results1)
+            if report_file1:
+                print(f"✅ 报告已生成: {report_file1}")
+        else:
+            print("❌ 小规模测试失败: 无结果")
+        
+        print("\n" + "=" * 80)
+        
+        # 测试总结
+        duration = end_time - start_time
+        print("\n" + "=" * 80)
+        print("🎉 明日股市机会策略投影服务测试总结")
+        print("=" * 80)
+        print(f"⏱️ 总测试耗时: {duration:.2f} 秒")
+        print("=" * 80)
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 投影服务测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_market_sentiment_analysis():
+    """测试市场情绪分析功能"""
+    print("🧪 开始测试市场情绪分析功能...")
+
+    try:
+        # 创建市场情绪分析策略实例
+        sentiment_strategy = MarketSentimentStrategy()
+
+        # 分析市场情绪
+        print("\n📊 正在分析市场情绪...")
+        sentiment_result = sentiment_strategy.analyze_market_sentiment()
+
+    except Exception as e:
+        print(f"❌ 测试过程中发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def test_market_review_service():
+    """测试市场复盘服务功能"""
+    print("🧪 开始测试市场复盘服务功能...")
+
+    try:
+        # 创建市场复盘服务实例
+        from src.xtrading.services.review.market_review_service import MarketReviewService
+        review_service = MarketReviewService()
+
+        # 执行市场复盘分析
+        print("\n📊 正在执行市场复盘分析...")
+        review_result = review_service.conduct_market_review()
+
+
+        # 打印复盘结果摘要
+        review_service.print_review_summary(review_result)
+
+    except Exception as e:
+        print(f"❌ 测试过程中发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     """主函数"""
     print("🚀 XTrading 策略回测")
@@ -280,7 +383,21 @@ def main():
     # all_industries_test()
 
     # 测试板块信号
-    sector_signal_service_test()
+    # sector_signal_service_test()
+
+    # 测试预测服务
+    # projection_service_test()
+
+    # 测试市场情绪分析
+    # test_market_sentiment_analysis()
+    
+    # 测试市场复盘服务
+    test_market_review_service()
+    
+    # 测试日期工具类
+    # print(DateUtils.get_recent_trading_day('20251026'))
+
+
 
 if __name__ == "__main__":
     main()

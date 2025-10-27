@@ -8,27 +8,24 @@ from .industry_sectors import (
     INDUSTRY_SECTORS_COUNT,
     INDUSTRY_CATEGORIES,
     get_industry_sectors,
-    get_industry_sectors_count,
     get_industry_categories,
-    get_sectors_by_category,
-    search_sectors,
-    get_sector_index
+    get_sectors_by_category
 )
 
 from .backtest_report_config import ReportDirectoryConfig
-from .strategy_config import StrategyConfig, strategy_config
+from .sector_strategy_params import StrategyParams, strategy_config
+from .stock_strategy_params import StockStrategyParams, stock_strategy_config
 
 __all__ = [
     'INDUSTRY_SECTORS',
     'INDUSTRY_SECTORS_COUNT', 
     'INDUSTRY_CATEGORIES',
     'get_industry_sectors',
-    'get_industry_sectors_count',
     'get_industry_categories',
     'get_sectors_by_category',
-    'search_sectors',
-    'get_sector_index',
     'ReportDirectoryConfig',
-    'StrategyConfig',
-    'strategy_config'
+    'StrategyParams',
+    'strategy_config',
+    'StockStrategyParams',
+    'stock_strategy_config'
 ]

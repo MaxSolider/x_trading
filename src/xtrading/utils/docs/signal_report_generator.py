@@ -6,7 +6,7 @@
 import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from ...static.strategy_config import StrategyConfig
+from ...static.sector_strategy_params import StrategyParams
 
 
 class SignalReportGenerator:

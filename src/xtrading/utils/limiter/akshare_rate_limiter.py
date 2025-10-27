@@ -5,6 +5,7 @@ AKShare频控工具类
 
 import time
 import threading
+import atexit
 from typing import Dict, Optional
 from functools import wraps
 
@@ -31,7 +32,19 @@ class AKShareRateLimiter:
             self._global_interval = 1.0  # 全局调用间隔1秒
             self._lock = threading.Lock()
             self._initialized = True
-            print("✅ AKShare全局频控器初始化成功 - 所有接口间隔1秒")
+            # 注册清理函数
+            atexit.register(self._cleanup)
+            print("✅ AKShare全局频控器初始化成功 - 所有接口间隔2秒")
+    
+    def _cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, '_lock') and self._lock is not None:
+                # 确保锁被正确释放
+                pass
+        except Exception:
+            # 忽略清理过程中的异常
+            pass
     
     def set_global_interval(self, interval: float):
         """

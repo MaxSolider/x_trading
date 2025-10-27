@@ -8,11 +8,13 @@ from .industry_sector.rsi_strategy import IndustryRSIStrategy
 from .industry_sector.bollinger_bands_strategy import IndustryBollingerBandsStrategy
 from .industry_sector.moving_average_strategy import IndustryMovingAverageStrategy
 from .industry_sector.backtest import StrategyBacktest
+from .industry_sector.volume_price_strategy import VolumePriceStrategy
 
 __all__ = [
     'IndustryMACDStrategy',
     'IndustryRSIStrategy', 
     'IndustryBollingerBandsStrategy',
     'IndustryMovingAverageStrategy',
-    'StrategyBacktest'
+    'StrategyBacktest',
+    'VolumePriceStrategy'
 ]
