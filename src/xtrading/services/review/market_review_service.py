@@ -11,6 +11,8 @@ import os
 from ...strategies.market_sentiment.market_sentiment_strategy import MarketSentimentStrategy
 from ...utils.docs.market_report_generator import MarketReportGenerator
 from ...utils.date.date_utils import DateUtils
+from ...static.industry_sectors import get_stocks_by_category, get_industry_category
+from ...strategies.individual_stock.trend_tracking_strategy import IndividualTrendTrackingStrategy
 
 class MarketReviewService:
     """市场复盘服务类"""
@@ -46,13 +48,14 @@ class MarketReviewService:
             print("📊 正在分析市场总结...")
             market_summary = self._analyze_market_summary(date)
             
-            # 2. 板块分析（框架）
+            # 2. 板块分析
             print("🏢 正在分析板块表现...")
             sector_analysis = self._analyze_sector_performance(date)
             
-            # 3. 个股分析（框架）
+            # 3. 个股分析
             print("🎯 正在分析个股表现...")
-            stock_analysis = self._analyze_stock_performance(date)
+            # 获取有买入信号，以及中性信号TOP10板块下的所有股票，再将股票传入_analyze_stock_performance中进行分析
+            stock_analysis = self._analyze_stock_performance(date, sector_analysis)
             
             # 4. 生成报告
             print("📋 正在生成复盘报告...")
@@ -646,22 +649,400 @@ class MarketReviewService:
             print(f"❌ 生成 {sector_name} MACD图表失败: {e}")
             return None
     
-    def _analyze_stock_performance(self, date: str) -> Dict[str, Any]:
+    def _analyze_stock_performance(self, date: str, sector_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        分析个股表现（框架实现）
+        分析个股表现
         
         Args:
             date: 分析日期
+            sector_analysis: 板块分析结果
             
         Returns:
             Dict[str, Any]: 个股分析结果
         """
-        # TODO: 实现个股分析具体逻辑
+        try:
+            print(f"🔍 开始个股分析...")
+            
+            # 1. 从板块分析结果中提取有买入信号和中性信号的TOP10板块
+            target_sectors = self._extract_top_sectors(sector_analysis, top_n=10)
+            
+            if not target_sectors:
+                print("⚠️ 未找到符合条件的板块")
+                return {
+                    'status': 'no_data',
+                    'message': '未找到符合条件的板块',
+                    'analysis_date': date
+                }
+            
+            print(f"📊 已选择 {len(target_sectors)} 个目标板块进行分析")
+            
+            # 2. 获取待分析的股票列表
+            stock_list = self._get_stocks_from_sectors(target_sectors)
+            
+            if not stock_list:
+                print("⚠️ 未找到待分析的股票")
+                return {
+                    'status': 'no_data',
+                    'message': '未找到待分析的股票',
+                    'analysis_date': date
+                }
+            
+            print(f"📈 找到 {len(stock_list)} 只待分析股票")
+
+            # 3. 使用IndividualTrendTrackingStrategy分析股票
+            print(f"\n📊 第三步：使用趋势追踪策略分析...")
+            trend_results = self._analyze_stocks_with_trend_tracking(stock_list, date)
+
+            # 4. 使用IndividualOversoldReboundStrategy分析股票
+            print(f"\n📊 第四步：使用超跌反弹策略分析...")
+            oversold_results = self._analyze_stocks_with_oversold_rebound(stock_list, date)
+
+            # 5. 合并两种策略的分析结果
+            print(f"\n📊 第五步：合并分析结果...")
+            merged_results = self._merge_strategy_results(trend_results, oversold_results, target_sectors)
+
+            return merged_results
+            
+        except Exception as e:
+            print(f"❌ 个股分析失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'failed',
+                'error': str(e),
+                'analysis_date': date
+            }
+    
+    def _analyze_stocks_with_trend_tracking(self, stock_list, date):
+        """
+        使用趋势追踪策略分析股票
+        
+        Returns:
+            Dict: 趋势追踪分析结果
+        """
+        try:
+            from ...strategies.individual_stock.trend_tracking_strategy import IndividualTrendTrackingStrategy
+            from datetime import datetime, timedelta
+            
+            trend_strategy = IndividualTrendTrackingStrategy()
+            stock_query = trend_strategy.stock_query
+            
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
+            stock_results = []
+            
+            for i, stock_info in enumerate(stock_list, 1):
+                stock_name = stock_info['name']
+                try:
+                    print(f"📊 [趋势追踪] 正在分析股票 {i}/{len(stock_list)}: {stock_name}")
+                    
+                    stock_code = stock_query.search_stock_by_name(stock_name)
+                    if not stock_code:
+                        continue
+                    
+                    analysis_result = trend_strategy.analyze_stock_trend(stock_code, start_date, date)
+                    
+                    if analysis_result:
+                        signal_strength = self._calculate_buy_signal_strength(analysis_result)
+                        analysis_result['stock_name'] = stock_name
+                        analysis_result['stock_code'] = stock_code
+                        analysis_result['signal_strength'] = signal_strength
+                        stock_results.append(analysis_result)
+                        print(f"✅ [趋势追踪] {stock_name} ({stock_code}) 分析完成，信号强度: {signal_strength:.2f}")
+                    
+                except Exception as e:
+                    print(f"❌ [趋势追踪] {stock_name} 分析失败: {e}")
+                    continue
+            
+            stock_results.sort(key=lambda x: x['signal_strength'], reverse=True)
+            top_10 = stock_results[:10]
+            
+            print(f"✅ [趋势追踪] 分析完成！共分析 {len(stock_results)} 只股票，选出TOP10")
+            
+            return {
+                'status': 'success',
+                'total_analyzed': len(stock_results),
+                'top_10': top_10,
+                'all_results': stock_results
+            }
+            
+        except Exception as e:
+            print(f"❌ 趋势追踪策略分析失败: {e}")
+            return {'status': 'failed', 'error': str(e)}
+    
+    def _analyze_stocks_with_oversold_rebound(self, stock_list, date):
+        """
+        使用超跌反弹策略分析股票
+        
+        Returns:
+            Dict: 超跌反弹分析结果
+        """
+        try:
+            from ...strategies.individual_stock.oversold_rebound_strategy import IndividualOversoldReboundStrategy
+            from datetime import datetime, timedelta
+            
+            oversold_strategy = IndividualOversoldReboundStrategy()
+            stock_query = oversold_strategy.stock_query
+            
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
+            stock_results = []
+            
+            for i, stock_info in enumerate(stock_list, 1):
+                stock_name = stock_info['name']
+                try:
+                    print(f"📊 [超跌反弹] 正在分析股票 {i}/{len(stock_list)}: {stock_name}")
+                    
+                    stock_code = stock_query.search_stock_by_name(stock_name)
+                    if not stock_code:
+                        continue
+                    
+                    analysis_result = oversold_strategy.analyze_stock_oversold(stock_code, start_date, date)
+                    
+                    if analysis_result:
+                        signal_strength = self._calculate_oversold_signal_strength(analysis_result)
+                        analysis_result['stock_name'] = stock_name
+                        analysis_result['stock_code'] = stock_code
+                        analysis_result['signal_strength'] = signal_strength
+                        stock_results.append(analysis_result)
+                        print(f"✅ [超跌反弹] {stock_name} ({stock_code}) 分析完成，信号强度: {signal_strength:.2f}")
+                    
+                except Exception as e:
+                    print(f"❌ [超跌反弹] {stock_name} 分析失败: {e}")
+                    continue
+            
+            stock_results.sort(key=lambda x: x['signal_strength'], reverse=True)
+            top_10 = stock_results[:10]
+            
+            print(f"✅ [超跌反弹] 分析完成！共分析 {len(stock_results)} 只股票，选出TOP10")
+            
+            return {
+                'status': 'success',
+                'total_analyzed': len(stock_results),
+                'top_10': top_10,
+                'all_results': stock_results
+            }
+            
+        except Exception as e:
+            print(f"❌ 超跌反弹策略分析失败: {e}")
+            return {'status': 'failed', 'error': str(e)}
+    
+    def _merge_strategy_results(self, trend_results, oversold_results, target_sectors):
+        """
+        合并两种策略的分析结果
+        
+        Returns:
+            Dict: 合并后的结果
+        """
         return {
-            'status': 'framework',
-            'message': '个股分析功能待实现',
-            'analysis_date': date
+            'status': 'success',
+            'target_sectors': target_sectors,
+            'trend_tracking': trend_results,
+            'oversold_rebound': oversold_results,
+            'summary': {
+                'trend_total': trend_results.get('total_analyzed', 0),
+                'oversold_total': oversold_results.get('total_analyzed', 0),
+                'trend_top_10': len(trend_results.get('top_10', [])),
+                'oversold_top_10': len(oversold_results.get('top_10', []))
+            }
         }
+    
+    def _calculate_oversold_signal_strength(self, analysis_result):
+        """
+        计算超跌反弹信号强度
+        
+        Returns:
+            float: 超跌反弹信号强度（0-100）
+        """
+        try:
+            base_score = 0
+            
+            # 1. 根据信号类型给分
+            signal_type = analysis_result.get('current_signal_type', 'HOLD')
+            if signal_type == 'STRONG_BUY':
+                base_score += 50
+            elif signal_type == 'BUY':
+                base_score += 30
+            elif signal_type == 'HOLD':
+                base_score += 10
+            
+            # 2. 根据超跌强度给分
+            oversold_strength = analysis_result.get('oversold_strength', 0)
+            base_score += oversold_strength * 20
+            
+            # 3. 根据KDJ超卖给分
+            if analysis_result.get('kdj_oversold', False):
+                base_score += 15
+            
+            # 4. 根据RSI超卖给分
+            if analysis_result.get('rsi_oversold', False):
+                base_score += 15
+            
+            return min(max(base_score, 0), 100)
+            
+        except Exception as e:
+            print(f"❌ 计算超跌反弹信号强度失败: {e}")
+            return 0
+
+    
+    def _extract_top_sectors(self, sector_analysis: Dict[str, Any], top_n: int = 10) -> List[str]:
+        """
+        从板块分析结果中提取有买入信号和中性信号的板块
+        
+        Args:
+            sector_analysis: 板块分析结果
+            top_n: 中性信号板块的提取数量（买入信号板块全部返回）
+            
+        Returns:
+            List[str]: 板块名称列表（所有买入信号板块 + TOP N中性信号板块）
+        """
+        try:
+            # 检查分析是否成功
+            if sector_analysis.get('status') != 'success':
+                print("⚠️ 板块分析未成功，无法提取板块")
+                return []
+            
+            # 获取板块分析结果
+            sector_results = sector_analysis.get('sector_results', {})
+            
+            if not sector_results:
+                print("⚠️ 未找到板块分析结果")
+                return []
+            
+            # 筛选有买入信号和中性信号的板块
+            buy_sectors = []
+            neutral_sectors = []
+            
+            for sector_name, sector_data in sector_results.items():
+                # 检查量价信号
+                vp_signal = sector_data.get('vp_signal_type', 'UNKNOWN')
+                # 检查MACD信号
+                macd_signal = sector_data.get('macd_signal_type', 'NEUTRAL')
+                # 获取综合信号强度
+                combined_strength = sector_data.get('combined_signal_strength', 0)
+                
+                # 买入信号：BUY 或 STRONG_BUY
+                if vp_signal in ['BUY', 'STRONG_BUY'] or macd_signal == 'BUY':
+                    buy_sectors.append({
+                        'name': sector_name,
+                        'strength': combined_strength,
+                        'vp_signal': vp_signal,
+                        'macd_signal': macd_signal
+                    })
+                # 中性信号
+                elif vp_signal in ['NEUTRAL', 'HOLD'] and macd_signal == 'NEUTRAL':
+                    neutral_sectors.append({
+                        'name': sector_name,
+                        'strength': abs(combined_strength)
+                    })
+            
+            # 按信号强度排序
+            buy_sectors.sort(key=lambda x: x['strength'], reverse=True)
+            neutral_sectors.sort(key=lambda x: x['strength'], reverse=True)
+            
+            # 构建最终选择板块列表
+            selected_sectors = []
+            
+            # 返回所有买入信号板块
+            selected_sectors.extend([s['name'] for s in buy_sectors])
+            
+            # 返回TOP10信号强度的中性板块
+            neutral_count = min(top_n, len(neutral_sectors))
+            selected_sectors.extend([s['name'] for s in neutral_sectors[:neutral_count]])
+            
+            print(f"📊 选中板块详情:")
+            print(f"  - 买入信号板块: {len(buy_sectors)}个")
+            print(f"  - 中性信号板块(TOP{top_n}): {neutral_count}个")
+            print(f"  - 选中板块: {', '.join(selected_sectors[:5])}{'...' if len(selected_sectors) > 5 else ''}")
+            
+            return selected_sectors
+            
+        except Exception as e:
+            print(f"❌ 提取板块失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _get_stocks_from_sectors(self, sectors: List[str]) -> List[Dict[str, str]]:
+        """
+        从板块列表中获取股票列表
+        
+        Args:
+            sectors: 板块名称列表
+            
+        Returns:
+            List[Dict]: 股票信息列表，格式为 [{'name': '股票名', 'sector': '板块名'}, ...]
+        """
+        try:
+            from ...static.industry_sectors import get_stocks_by_sector
+            
+            stock_list = []
+            stock_set = set()  # 用于去重
+            
+            for sector in sectors:
+                stocks = get_stocks_by_sector(sector)
+                if not stocks:
+                    print(f"⚠️ 板块 {sector} 未找到股票列表")
+                    continue
+                
+                for stock_name in stocks:
+                    # 使用股票名作为唯一标识
+                    if stock_name not in stock_set:
+                        stock_list.append({
+                            'name': stock_name,
+                            'sector': sector
+                        })
+                        stock_set.add(stock_name)
+            
+            print(f"📈 从 {len(sectors)} 个板块中获取到 {len(stock_list)} 只股票")
+            
+            return stock_list
+            
+        except Exception as e:
+            print(f"❌ 获取股票列表失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _calculate_buy_signal_strength(self, analysis_result: Dict[str, Any]) -> float:
+        """
+        计算买入信号强度
+        
+        Args:
+            analysis_result: 个股分析结果
+            
+        Returns:
+            float: 买入信号强度（0-100）
+        """
+        try:
+            # 基础分数
+            base_score = 0
+            
+            # 1. 根据信号类型给分
+            signal_type = analysis_result.get('current_signal_type', 'HOLD')
+            if signal_type == 'STRONG_BUY':
+                base_score += 50
+            elif signal_type == 'BUY':
+                base_score += 30
+            elif signal_type == 'HOLD':
+                base_score += 10
+            
+            # 2. 根据趋势强度给分（趋势强度在0-1之间）
+            trend_strength = analysis_result.get('trend_strength', 0)
+            base_score += trend_strength * 20
+            
+            # 3. 根据均线多头排列给分
+            if analysis_result.get('ma_alignment', False):
+                base_score += 15
+            
+            # 4. 根据MACD多头市场给分
+            if analysis_result.get('macd_bullish', False):
+                base_score += 15
+            
+            # 限制在0-100之间
+            return min(max(base_score, 0), 100)
+            
+        except Exception as e:
+            print(f"❌ 计算买入信号强度失败: {e}")
+            return 0
     
     def _generate_review_report(self, date: str, market_summary: Dict[str, Any], 
                               sector_analysis: Dict[str, Any], 

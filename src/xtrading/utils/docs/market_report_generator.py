@@ -550,12 +550,154 @@ class MarketReportGenerator:
         content = []
         content.append("## 🎯 个股分析")
         content.append("")
-        if stock_analysis.get('status') == 'framework':
+        
+        status = stock_analysis.get('status')
+        
+        if status == 'framework':
             content.append("🚧 个股分析功能正在开发中...")
+        elif status == 'no_data':
+            content.append(f"⚠️ {stock_analysis.get('message', '无数据')}")
+        elif status == 'failed':
+            content.append(f"❌ 个股分析失败: {stock_analysis.get('error', '未知错误')}")
+        elif status == 'success':
+            # 显示分析概览
+            summary = stock_analysis.get('summary', {})
+            target_sectors = stock_analysis.get('target_sectors', [])
+            trend_tracking = stock_analysis.get('trend_tracking', {})
+            oversold_rebound = stock_analysis.get('oversold_rebound', {})
+            
+            content.append(f"**趋势追踪策略分析**: {summary.get('trend_total', 0)}只股票")
+            content.append(f"**超跌反弹策略分析**: {summary.get('oversold_total', 0)}只股票")
+            content.append(f"**分析板块数量**: {len(target_sectors)}个")
+            content.append("")
+            
+            if target_sectors:
+                content.append(f"**目标板块**: {', '.join(target_sectors[:8])}{'...' if len(target_sectors) > 8 else ''}")
+                content.append("")
+            
+            # === 趋势追踪策略结果 ===
+            if trend_tracking.get('status') == 'success':
+                content.append("## 📈 趋势追踪策略 - TOP10股票")
+                content.append("")
+                
+                top_stocks = trend_tracking.get('top_10', [])
+                if top_stocks:
+                    table_data = [["排名", "股票名称", "信号类型", "趋势状态", "信号强度", "最新价", "趋势强度"]]
+                    
+                    for i, stock in enumerate(top_stocks[:10], 1):
+                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
+                        signal_type = stock.get('current_signal_type', 'HOLD')
+                        trend_status = stock.get('trend_status', 'SIDEWAYS')
+                        signal_strength = stock.get('signal_strength', 0)
+                        latest_close = stock.get('latest_close', 0)
+                        trend_strength = stock.get('trend_strength', 0)
+                        
+                        table_data.append([
+                            str(i),
+                            stock_name,
+                            signal_type,
+                            trend_status,
+                            f"{signal_strength:.1f}",
+                            f"{latest_close:.2f}",
+                            f"{trend_strength:.2f}"
+                        ])
+                    
+                    content.append(self._generate_markdown_table(table_data))
+                    content.append("")
+                
+                # 详细分析前3只
+                if top_stocks:
+                    content.append("### 详细分析")
+                    content.append("")
+                    for i, stock in enumerate(top_stocks[:3], 1):
+                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
+                        content.append(f"#### {i}. {stock_name}")
+                        content.append("")
+                        content.append(f"- **信号类型**: {stock.get('current_signal_type', 'HOLD')}")
+                        content.append(f"- **趋势状态**: {stock.get('trend_status', 'SIDEWAYS')}")
+                        content.append(f"- **信号强度**: {stock.get('signal_strength', 0):.1f}")
+                        content.append(f"- **最新收盘价**: {stock.get('latest_close', 0):.2f}")
+                        content.append("")
+            
+            # === 超跌反弹策略结果 ===
+            if oversold_rebound.get('status') == 'success':
+                content.append("## 📉 超跌反弹策略 - TOP10股票")
+                content.append("")
+                
+                top_stocks = oversold_rebound.get('top_10', [])
+                if top_stocks:
+                    table_data = [["排名", "股票名称", "信号类型", "超跌类型", "信号强度", "最新价", "超跌强度"]]
+                    
+                    for i, stock in enumerate(top_stocks[:10], 1):
+                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
+                        signal_type = stock.get('current_signal_type', 'HOLD')
+                        oversold_type = stock.get('oversold_type', 'NONE')
+                        signal_strength = stock.get('signal_strength', 0)
+                        latest_close = stock.get('latest_close', 0)
+                        oversold_strength = stock.get('oversold_strength', 0)
+                        
+                        table_data.append([
+                            str(i),
+                            stock_name,
+                            signal_type,
+                            oversold_type,
+                            f"{signal_strength:.1f}",
+                            f"{latest_close:.2f}",
+                            f"{oversold_strength:.2f}"
+                        ])
+                    
+                    content.append(self._generate_markdown_table(table_data))
+                    content.append("")
+                
+                # 详细分析前3只
+                if top_stocks:
+                    content.append("### 详细分析")
+                    content.append("")
+                    for i, stock in enumerate(top_stocks[:3], 1):
+                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
+                        content.append(f"#### {i}. {stock_name}")
+                        content.append("")
+                        content.append(f"- **信号类型**: {stock.get('current_signal_type', 'HOLD')}")
+                        content.append(f"- **超跌类型**: {stock.get('oversold_type', 'NONE')}")
+                        content.append(f"- **信号强度**: {stock.get('signal_strength', 0):.1f}")
+                        content.append(f"- **KDJ状态**: {stock.get('kdj_status', 'NORMAL')}")
+                        content.append(f"- **RSI状态**: {stock.get('rsi_status', 'NORMAL')}")
+                        content.append("")
         else:
             content.append("📊 个股分析数据")
+        
         content.append("")
         return content
+    
+    def _generate_markdown_table(self, data: list) -> str:
+        """
+        生成Markdown格式的表格
+        
+        Args:
+            data: 表格数据，格式为 [[header1, header2, ...], [row1, row2, ...], ...]
+            
+        Returns:
+            str: Markdown格式的表格字符串
+        """
+        if not data or len(data) < 2:
+            return ""
+        
+        lines = []
+        
+        # 表头
+        header = "| " + " | ".join(data[0]) + " |"
+        lines.append(header)
+        
+        # 分隔符
+        separator = "| " + " | ".join(["---"] * len(data[0])) + " |"
+        lines.append(separator)
+        
+        # 数据行
+        for row in data[1:]:
+            row_str = "| " + " | ".join(str(cell) for cell in row) + " |"
+            lines.append(row_str)
+        
+        return "\n".join(lines)
     
     def _build_risk_warning_section(self) -> list:
         """

@@ -333,26 +333,56 @@ class IndividualOversoldReboundStrategy:
             # 计算超跌强度
             oversold_strength = self._calculate_oversold_strength(signal_data)
             
+            # 获取日期列名和收盘价列名
+            date_col = None
+            for col in ['日期', 'date', 'Date', '交易日期']:
+                if col in signal_data.columns:
+                    date_col = col
+                    break
+            
+            close_col = None
+            for col in ['收盘', '收盘价', 'close', 'Close']:
+                if col in signal_data.columns:
+                    close_col = col
+                    break
+            
+            # 构建最近交易信号列表
+            recent_signals_list = []
+            if not recent_signals.empty and date_col and close_col:
+                try:
+                    recent_signals_list = recent_signals[[date_col, close_col, 'K', 'D', 'J', 'RSI', 'Decline_20', 'Signal', 'Signal_Type', 'Oversold_Type']].to_dict('records')
+                except Exception as e:
+                    print(f"⚠️ 构建最近交易信号列表失败: {e}")
+                    recent_signals_list = []
+            
+            analysis_date = 'Unknown'
+            if date_col:
+                analysis_date = latest_data.get(date_col, 'Unknown')
+            
+            latest_close = 0
+            if close_col:
+                latest_close = latest_data.get(close_col, 0)
+            
             analysis_result = {
                 'symbol': symbol,
-                'latest_close': latest_data.get('收盘', latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0)))),
-                'latest_k': latest_data['K'],
-                'latest_d': latest_data['D'],
-                'latest_j': latest_data['J'],
-                'latest_rsi': latest_data['RSI'],
-                'latest_decline_20': latest_data['Decline_20'],
-                'current_signal_type': latest_data['Signal_Type'],
-                'oversold_type': latest_data['Oversold_Type'],
-                'kdj_status': latest_data['KDJ_Status'],
-                'rsi_status': latest_data['RSI_Status'],
-                'decline_status': latest_data['Decline_Status'],
+                'latest_close': latest_close,
+                'latest_k': latest_data.get('K', 0),
+                'latest_d': latest_data.get('D', 0),
+                'latest_j': latest_data.get('J', 0),
+                'latest_rsi': latest_data.get('RSI', 0),
+                'latest_decline_20': latest_data.get('Decline_20', 0),
+                'current_signal_type': latest_data.get('Signal_Type', 'HOLD'),
+                'oversold_type': latest_data.get('Oversold_Type', 'NONE'),
+                'kdj_status': latest_data.get('KDJ_Status', 'NORMAL'),
+                'rsi_status': latest_data.get('RSI_Status', 'NORMAL'),
+                'decline_status': latest_data.get('Decline_Status', 'NORMAL'),
                 'oversold_strength': oversold_strength,
                 'kdj_oversold': self._check_kdj_oversold(latest_data),
                 'rsi_oversold': self._check_rsi_oversold(latest_data),
                 'price_oversold': self._check_price_oversold(latest_data),
-                'recent_signals': recent_signals[['日期', '收盘', 'K', 'D', 'J', 'RSI', 'Decline_20', 'Signal', 'Signal_Type', 'Oversold_Type']].to_dict('records') if not recent_signals.empty else [],
+                'recent_signals': recent_signals_list,
                 'data_points': len(signal_data),
-                'analysis_date': latest_data.get('日期', 'Unknown')
+                'analysis_date': analysis_date
             }
             
             print(f"✅ {symbol} 超跌反弹分析完成")

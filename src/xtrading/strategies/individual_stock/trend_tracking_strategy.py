@@ -258,24 +258,57 @@ class IndividualTrendTrackingStrategy:
             # 计算趋势强度
             trend_strength = self._calculate_trend_strength(signal_data)
             
+            # 获取日期列名（兼容中英文列名）
+            date_col = None
+            for col in ['日期', 'date', 'Date', '交易日期']:
+                if col in signal_data.columns:
+                    date_col = col
+                    break
+            
+            # 获取收盘价列名（兼容中英文列名）
+            close_col = None
+            for col in ['收盘', '收盘价', 'close', 'Close']:
+                if col in signal_data.columns:
+                    close_col = col
+                    break
+            
+            # 构建最近交易信号列表
+            recent_signals_list = []
+            if not recent_signals.empty and date_col and close_col:
+                try:
+                    recent_signals_list = recent_signals[[date_col, close_col, 'SMA_5', 'SMA_20', 'SMA_60', 'DIF', 'DEA', 'Signal', 'Signal_Type', 'Trend_Status']].to_dict('records')
+                except Exception as e:
+                    print(f"⚠️ 构建最近交易信号列表失败: {e}")
+                    recent_signals_list = []
+            
+            # 获取分析日期
+            analysis_date = 'Unknown'
+            if date_col:
+                analysis_date = latest_data.get(date_col, 'Unknown')
+            
+            # 获取最新收盘价
+            latest_close = 0
+            if close_col:
+                latest_close = latest_data.get(close_col, 0)
+            
             analysis_result = {
                 'symbol': symbol,
-                'latest_close': latest_data.get('收盘', latest_data.get('收盘价', latest_data.get('close', latest_data.get('Close', 0)))),
-                'latest_sma_5': latest_data['SMA_5'],
-                'latest_sma_20': latest_data['SMA_20'],
-                'latest_sma_60': latest_data['SMA_60'],
-                'latest_dif': latest_data['DIF'],
-                'latest_dea': latest_data['DEA'],
-                'latest_macd': latest_data['MACD'],
-                'current_signal_type': latest_data['Signal_Type'],
-                'trend_status': latest_data['Trend_Status'],
-                'macd_status': latest_data['MACD_Status'],
+                'latest_close': latest_close,
+                'latest_sma_5': latest_data.get('SMA_5', 0),
+                'latest_sma_20': latest_data.get('SMA_20', 0),
+                'latest_sma_60': latest_data.get('SMA_60', 0),
+                'latest_dif': latest_data.get('DIF', 0),
+                'latest_dea': latest_data.get('DEA', 0),
+                'latest_macd': latest_data.get('MACD', 0),
+                'current_signal_type': latest_data.get('Signal_Type', 'HOLD'),
+                'trend_status': latest_data.get('Trend_Status', 'SIDEWAYS'),
+                'macd_status': latest_data.get('MACD_Status', 'NEUTRAL'),
                 'trend_strength': trend_strength,
                 'ma_alignment': self._check_ma_alignment(latest_data),
                 'macd_bullish': self._check_macd_bullish(latest_data),
-                'recent_signals': recent_signals[['日期', '收盘', 'SMA_5', 'SMA_20', 'SMA_60', 'DIF', 'DEA', 'Signal', 'Signal_Type', 'Trend_Status']].to_dict('records') if not recent_signals.empty else [],
+                'recent_signals': recent_signals_list,
                 'data_points': len(signal_data),
-                'analysis_date': latest_data.get('日期', 'Unknown')
+                'analysis_date': analysis_date
             }
             
             print(f"✅ {symbol} 趋势追踪分析完成")

@@ -582,5 +582,62 @@ class StockQuery:
             print(f"❌ 获取{indicator}主力净流入排名数据失败: {e}")
             return None
     
+    def search_stock_by_name(self, stock_name: str) -> Optional[str]:
+        """
+        通过股票名称搜索股票代码
+        
+        Args:
+            stock_name: 股票名称（如：平安银行）
+            
+        Returns:
+            Optional[str]: 股票代码（如：000001）或 None
+        """
+        try:
+            # 频控：等待到可以调用API
+            rate_limit_manual()
+            
+            # 获取所有股票代码和名称的映射
+            stock_info = ak.stock_info_a_code_name()
+            
+            if stock_info is None or stock_info.empty:
+                print(f"❌ 无法获取股票信息列表")
+                return None
+            
+            # 搜索匹配的股票
+            # 列名可能是 'code', '代码' 或 'name', '名称'
+            code_col = None
+            name_col = None
+            
+            for col in stock_info.columns:
+                if 'code' in col.lower() or col == '代码':
+                    code_col = col
+                elif 'name' in col.lower() or col == '名称':
+                    name_col = col
+            
+            if code_col is None or name_col is None:
+                # 如果找不到标准列名，尝试使用所有列
+                print(f"⚠️ 无法识别列名，使用默认列")
+                if len(stock_info.columns) >= 2:
+                    code_col = stock_info.columns[0]
+                    name_col = stock_info.columns[1]
+                else:
+                    print(f"❌ 股票信息表列数不足")
+                    return None
+            
+            # 精确匹配
+            match = stock_info[stock_info[name_col].str.contains(stock_name, na=False)]
+            if not match.empty:
+                code = match.iloc[0][code_col]
+                print(f"✅ 找到股票: {stock_name} -> {code}")
+                return code
+            
+            # 如果精确匹配失败，尝试模糊匹配
+            print(f"⚠️ 无法精确匹配股票名称: {stock_name}")
+            return None
+            
+        except Exception as e:
+            print(f"❌ 搜索股票 {stock_name} 失败: {e}")
+            return None
+    
 
 
