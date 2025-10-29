@@ -84,6 +84,49 @@ class VolumePriceStrategy:
             traceback.print_exc()
             return None
     
+    def analyze_volume_price_relationship_with_data(self, symbol: str, hist_data: pd.DataFrame, end_date: str) -> Optional[Dict[str, Any]]:
+        """
+        使用传入的数据分析行业板块的量价关系
+        
+        Args:
+            symbol: 板块代码或股票代码
+            hist_data: 历史数据DataFrame
+            end_date: 结束日期 (YYYYMMDD)
+            
+        Returns:
+            Dict[str, Any]: 量价分析结果
+        """
+        try:
+            print(f"🔍 开始分析板块 {symbol} 的量价关系...")
+            
+            if hist_data is None or hist_data.empty:
+                print(f"❌ 板块 {symbol} 历史数据为空")
+                return None
+            
+            # 计算量价关系
+            volume_price_result = self._calculate_volume_price_relationship(hist_data)
+            
+            # 生成交易信号
+            signal_result = self._generate_volume_price_signal(volume_price_result)
+            
+            # 整合结果
+            result = {
+                'symbol': symbol,
+                'analysis_date': end_date,
+                'volume_price_analysis': volume_price_result,
+                'trading_signal': signal_result,
+                'analysis_summary': self._generate_analysis_summary(volume_price_result, signal_result)
+            }
+            
+            print(f"✅ {symbol} 量价关系分析完成")
+            return result
+            
+        except Exception as e:
+            print(f"❌ {symbol} 量价关系分析失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
     def _calculate_volume_price_relationship(self, hist_data: pd.DataFrame) -> Dict[str, Any]:
         """
         计算量价关系指标
@@ -990,6 +1033,58 @@ class VolumePriceStrategy:
             hist_data = self.industry_query.get_board_industry_hist(symbol, start_date, end_date)
             if hist_data is None or hist_data.empty:
                 print(f"❌ 板块 {symbol} 历史数据获取失败")
+                return None
+            
+            # 检测日期列名并排序
+            date_col = None
+            for col in ['日期', 'date', 'Date']:
+                if col in hist_data.columns:
+                    date_col = col
+                    break
+            
+            if date_col:
+                hist_data = hist_data.sort_values(date_col).reset_index(drop=True)
+            else:
+                hist_data = hist_data.reset_index(drop=True)
+            
+            # 创建输出目录
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 生成图表
+            chart_path = self._create_volume_price_chart(hist_data, symbol, end_date, output_dir)
+            
+            if chart_path:
+                print(f"✅ {symbol} 量价关系趋势图已生成: {chart_path}")
+                return chart_path
+            else:
+                print(f"❌ {symbol} 量价关系趋势图生成失败")
+                return None
+                
+        except Exception as e:
+            print(f"❌ 生成 {symbol} 量价关系趋势图失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def generate_volume_price_trend_chart_with_data(self, symbol: str, hist_data: pd.DataFrame, 
+                                                   end_date: str, output_dir: str = "reports/images/volume_price") -> Optional[str]:
+        """
+        使用传入的数据生成行业板块近期量价关系趋势图
+        
+        Args:
+            symbol: 板块代码或股票代码
+            hist_data: 历史数据DataFrame
+            end_date: 结束日期 (YYYYMMDD)
+            output_dir: 输出目录
+            
+        Returns:
+            Optional[str]: 生成的图表文件路径
+        """
+        try:
+            print(f"📊 开始生成板块 {symbol} 的量价关系趋势图...")
+            
+            if hist_data is None or hist_data.empty:
+                print(f"❌ 板块 {symbol} 历史数据为空")
                 return None
             
             # 检测日期列名并排序

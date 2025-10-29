@@ -306,6 +306,29 @@ class IndividualOversoldReboundStrategy:
                 print(f"❌ 无法获取 {symbol} 的历史数据")
                 return None
             
+            # 使用传入的数据进行分析
+            return self.analyze_stock_oversold_with_data(hist_data, symbol)
+            
+        except Exception as e:
+            print(f"❌ {symbol} 超跌反弹分析失败: {e}")
+            return None
+    
+    def analyze_stock_oversold_with_data(self, hist_data: pd.DataFrame, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        使用传入的数据分析个股超跌反弹指标
+        
+        Args:
+            hist_data: 历史数据DataFrame
+            symbol: 股票代码
+            
+        Returns:
+            Dict: 包含分析结果的字典
+        """
+        try:
+            if hist_data is None or hist_data.empty:
+                print(f"❌ {symbol} 的历史数据为空")
+                return None
+            
             # 计算KDJ指标
             kdj_data = self.calculate_kdj(hist_data)
             if kdj_data is None:
@@ -385,7 +408,6 @@ class IndividualOversoldReboundStrategy:
                 'analysis_date': analysis_date
             }
             
-            print(f"✅ {symbol} 超跌反弹分析完成")
             return analysis_result
             
         except Exception as e:

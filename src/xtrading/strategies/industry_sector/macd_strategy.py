@@ -142,6 +142,22 @@ class IndustryMACDStrategy:
             latest_data = signal_data.iloc[-1]
             recent_signals = signal_data[signal_data['Signal'] != 0].tail(5)
             
+            # 获取日期列名
+            date_col = None
+            for col in ['日期', 'date', 'Date']:
+                if col in recent_signals.columns:
+                    date_col = col
+                    break
+            
+            # 构建recent_signals列表
+            recent_signals_list = []
+            if not recent_signals.empty and date_col:
+                try:
+                    recent_signals_list = recent_signals[[date_col, 'MACD', 'Signal', 'Signal_Type']].to_dict('records')
+                except Exception as e:
+                    print(f"⚠️ 构建recent_signals列表失败: {e}")
+                    recent_signals_list = []
+            
             analysis_result = {
                 'industry_name': industry_name,
                 'latest_macd': latest_data['MACD'],
@@ -149,9 +165,75 @@ class IndustryMACDStrategy:
                 'latest_histogram': latest_data['Histogram'],
                 'current_signal_type': latest_data['Signal_Type'],
                 'zero_cross_status': latest_data.get('Zero_Cross', 'NONE'),
-                'recent_signals': recent_signals[['日期', 'MACD', 'Signal', 'Signal_Type']].to_dict('records') if not recent_signals.empty else [],
+                'recent_signals': recent_signals_list,
                 'data_points': len(signal_data),
-                'analysis_date': latest_data.get('日期', 'Unknown')
+                'analysis_date': latest_data.get(date_col if date_col else '日期', 'Unknown')
+            }
+            
+            print(f"✅ {industry_name} MACD分析完成")
+            return analysis_result
+            
+        except Exception as e:
+            print(f"❌ {industry_name} MACD分析失败: {e}")
+            return None
+    
+    def analyze_industry_macd_with_data(self, industry_name: str, hist_data: pd.DataFrame, end_date: str) -> Optional[Dict[str, Any]]:
+        """
+        使用传入的数据分析行业板块MACD指标
+        
+        Args:
+            industry_name: 行业板块名称
+            hist_data: 历史数据DataFrame
+            end_date: 结束日期
+            
+        Returns:
+            Dict: 包含分析结果的字典
+        """
+        try:
+            if hist_data is None or hist_data.empty:
+                print(f"❌ {industry_name} 历史数据为空")
+                return None
+            
+            # 计算MACD指标
+            macd_data = self.calculate_macd(hist_data)
+            if macd_data is None:
+                return None
+            
+            # 生成交易信号
+            signal_data = self.generate_macd_signals(macd_data)
+            if signal_data is None:
+                return None
+            
+            # 分析结果
+            latest_data = signal_data.iloc[-1]
+            recent_signals = signal_data[signal_data['Signal'] != 0].tail(5)
+            
+            # 获取日期列名
+            date_col = None
+            for col in ['日期', 'date', 'Date']:
+                if col in recent_signals.columns:
+                    date_col = col
+                    break
+            
+            # 构建recent_signals列表
+            recent_signals_list = []
+            if not recent_signals.empty and date_col:
+                try:
+                    recent_signals_list = recent_signals[[date_col, 'MACD', 'Signal', 'Signal_Type']].to_dict('records')
+                except Exception as e:
+                    print(f"⚠️ 构建recent_signals列表失败: {e}")
+                    recent_signals_list = []
+            
+            analysis_result = {
+                'industry_name': industry_name,
+                'latest_macd': latest_data['MACD'],
+                'latest_signal': latest_data['Signal'],
+                'latest_histogram': latest_data['Histogram'],
+                'current_signal_type': latest_data['Signal_Type'],
+                'zero_cross_status': latest_data.get('Zero_Cross', 'NONE'),
+                'recent_signals': recent_signals_list,
+                'data_points': len(signal_data),
+                'analysis_date': end_date
             }
             
             print(f"✅ {industry_name} MACD分析完成")

@@ -236,6 +236,29 @@ class IndividualTrendTrackingStrategy:
                 print(f"❌ 无法获取 {symbol} 的历史数据")
                 return None
             
+            # 使用传入的数据进行分析
+            return self.analyze_stock_trend_with_data(hist_data, symbol)
+            
+        except Exception as e:
+            print(f"❌ {symbol} 趋势追踪分析失败: {e}")
+            return None
+    
+    def analyze_stock_trend_with_data(self, hist_data: pd.DataFrame, symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        使用传入的数据分析个股趋势追踪指标
+        
+        Args:
+            hist_data: 历史数据DataFrame
+            symbol: 股票代码
+            
+        Returns:
+            Dict: 包含分析结果的字典
+        """
+        try:
+            if hist_data is None or hist_data.empty:
+                print(f"❌ {symbol} 的历史数据为空")
+                return None
+            
             # 计算移动平均线
             ma_data = self.calculate_moving_averages(hist_data)
             if ma_data is None:
@@ -311,7 +334,6 @@ class IndividualTrendTrackingStrategy:
                 'analysis_date': analysis_date
             }
             
-            print(f"✅ {symbol} 趋势追踪分析完成")
             return analysis_result
             
         except Exception as e:

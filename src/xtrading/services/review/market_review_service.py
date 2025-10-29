@@ -168,16 +168,39 @@ class MarketReviewService:
         """
         try:
             from ...static.industry_sectors import INDUSTRY_SECTORS
+            from ...repositories.stock.industry_info_query import IndustryInfoQuery
+            from datetime import datetime, timedelta
             
             print(f"🔍 开始综合分析 {len(INDUSTRY_SECTORS)} 个板块的表现...")
             
+            # 0. 先批量获取所有板块近120天历史数据
+            print(f"\n📦 第零步：批量获取所有板块近120天历史数据...")
+            industry_query = IndustryInfoQuery()
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
+            
+            sector_data_dict = {}
+            for i, sector_name in enumerate(INDUSTRY_SECTORS, 1):
+                try:
+                    print(f"📊 正在获取板块 {i}/{len(INDUSTRY_SECTORS)}: {sector_name}")
+                    hist_data = industry_query.get_board_industry_hist(sector_name, start_date, date)
+                    if hist_data is not None and not hist_data.empty:
+                        sector_data_dict[sector_name] = hist_data
+                        print(f"✅ {sector_name} 历史数据获取成功")
+                    else:
+                        print(f"⚠️ {sector_name} 历史数据获取失败")
+                except Exception as e:
+                    print(f"❌ {sector_name} 历史数据获取失败: {e}")
+                    continue
+            
+            print(f"✅ 成功获取 {len(sector_data_dict)}/{len(INDUSTRY_SECTORS)} 个板块的历史数据")
+            
             # 1. 量价分析
             print(f"\n📊 第一步：进行量价分析...")
-            volume_price_analysis = self._analyze_sector_volume_price_performance(date)
+            volume_price_analysis = self._analyze_sector_volume_price_performance(date, sector_data_dict)
             
             # 2. MACD分析
             print(f"\n📈 第二步：进行MACD分析...")
-            macd_analysis = self._analyze_sector_macd_performance(date)
+            macd_analysis = self._analyze_sector_macd_performance(date, sector_data_dict)
             
             # 3. 合并分析结果
             print(f"\n🔄 第三步：合并分析结果...")
@@ -199,12 +222,13 @@ class MarketReviewService:
                 'analysis_date': date
             }
 
-    def _analyze_sector_volume_price_performance(self, date: str) -> Dict[str, Any]:
+    def _analyze_sector_volume_price_performance(self, date: str, sector_data_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """
         分析板块量价表现
         
         Args:
             date: 分析日期
+            sector_data_dict: 板块数据字典
             
         Returns:
             Dict[str, Any]: 量价分析结果
@@ -239,18 +263,24 @@ class MarketReviewService:
                 try:
                     print(f"📊 正在分析板块 {i}/{len(INDUSTRY_SECTORS)}: {sector_name}")
                     
-                    # 分析板块量价关系
-                    volume_price_result = volume_price_strategy.analyze_volume_price_relationship(
-                        sector_name, start_date, date
+                    # 从预查询的数据中获取
+                    hist_data = sector_data_dict.get(sector_name)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {sector_name} 没有历史数据，跳过")
+                        continue
+                    
+                    # 使用预查询的数据进行分析
+                    volume_price_result = volume_price_strategy.analyze_volume_price_relationship_with_data(
+                        sector_name, hist_data, date
                     )
                     
                     if volume_price_result is None:
                         print(f"⚠️ {sector_name} 量价分析失败，跳过")
                         continue
                     
-                    # 生成量价关系趋势图
-                    chart_path = volume_price_strategy.generate_volume_price_trend_chart(
-                        sector_name, start_date, date, "reports/images/sectors/volume_price"
+                    # 生成量价关系趋势图（使用预查询的数据）
+                    chart_path = volume_price_strategy.generate_volume_price_trend_chart_with_data(
+                        sector_name, hist_data, date, "reports/images/sectors/volume_price"
                     )
                     
                     if chart_path:
@@ -310,12 +340,13 @@ class MarketReviewService:
                 'analysis_date': date
             }
 
-    def _analyze_sector_macd_performance(self, date: str) -> Dict[str, Any]:
+    def _analyze_sector_macd_performance(self, date: str, sector_data_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """
         分析板块表现 - 计算所有板块的MACD数据并生成趋势图
         
         Args:
             date: 分析日期
+            sector_data_dict: 板块数据字典
             
         Returns:
             Dict[str, Any]: 板块分析结果
@@ -353,22 +384,19 @@ class MarketReviewService:
                 try:
                     print(f"📊 正在分析板块 {i}/{len(INDUSTRY_SECTORS)}: {sector_name}")
                     
-                    # 分析板块MACD
-                    macd_result = macd_strategy.analyze_industry_macd(
-                        sector_name, start_date, date
+                    # 从预查询的数据中获取
+                    hist_data = sector_data_dict.get(sector_name)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {sector_name} 没有历史数据，跳过")
+                        continue
+                    
+                    # 使用预查询的数据进行分析
+                    macd_result = macd_strategy.analyze_industry_macd_with_data(
+                        sector_name, hist_data, date
                     )
                     
                     if macd_result is None:
                         print(f"⚠️ {sector_name} MACD分析失败，跳过")
-                        continue
-                    
-                    # 获取历史数据用于图表生成
-                    hist_data = macd_strategy.industry_query.get_board_industry_hist(
-                        sector_name, start_date, date
-                    )
-                    
-                    if hist_data is None or hist_data.empty:
-                        print(f"⚠️ {sector_name} 历史数据获取失败，跳过")
                         continue
                     
                     # 计算MACD数据
@@ -689,15 +717,29 @@ class MarketReviewService:
             
             print(f"📈 找到 {len(stock_list)} 只待分析股票")
 
-            # 3. 使用IndividualTrendTrackingStrategy分析股票
+            # 3. 批量查询股票近90天的日频行情数据
+            print(f"\n📊 第二步：批量查询股票近90天的日频行情数据...")
+            stock_data_dict = self._batch_query_stock_data(stock_list, date)
+            
+            if not stock_data_dict:
+                print("⚠️ 未获取到股票行情数据")
+                return {
+                    'status': 'no_data',
+                    'message': '未获取到股票行情数据',
+                    'analysis_date': date
+                }
+            
+            print(f"✅ 成功获取 {len(stock_data_dict)} 只股票的行情数据")
+
+            # 4. 使用IndividualTrendTrackingStrategy分析股票
             print(f"\n📊 第三步：使用趋势追踪策略分析...")
-            trend_results = self._analyze_stocks_with_trend_tracking(stock_list, date)
+            trend_results = self._analyze_stocks_with_trend_tracking(stock_list, date, stock_data_dict)
 
-            # 4. 使用IndividualOversoldReboundStrategy分析股票
+            # 5. 使用IndividualOversoldReboundStrategy分析股票
             print(f"\n📊 第四步：使用超跌反弹策略分析...")
-            oversold_results = self._analyze_stocks_with_oversold_rebound(stock_list, date)
+            oversold_results = self._analyze_stocks_with_oversold_rebound(stock_list, date, stock_data_dict)
 
-            # 5. 合并两种策略的分析结果
+            # 6. 合并两种策略的分析结果
             print(f"\n📊 第五步：合并分析结果...")
             merged_results = self._merge_strategy_results(trend_results, oversold_results, target_sectors)
 
@@ -713,9 +755,64 @@ class MarketReviewService:
                 'analysis_date': date
             }
     
-    def _analyze_stocks_with_trend_tracking(self, stock_list, date):
+    def _batch_query_stock_data(self, stock_list: List[Dict[str, str]], date: str) -> Dict[str, pd.DataFrame]:
+        """
+        批量查询股票近90天的日频行情数据
+        
+        Args:
+            stock_list: 股票列表，格式为 [{'name': '股票名', 'sector': '板块名'}, ...]
+            date: 分析日期
+            
+        Returns:
+            Dict[str, pd.DataFrame]: 股票代码到历史数据的映射
+        """
+        try:
+            from ...repositories.stock.stock_query import StockQuery
+            from datetime import datetime, timedelta
+            
+            stock_query = StockQuery()
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
+            
+            stock_data_dict = {}
+            
+            for i, stock_info in enumerate(stock_list, 1):
+                stock_name = stock_info['name']
+                try:
+                    # 查询股票代码
+                    stock_code = stock_query.search_stock_by_name(stock_name)
+                    if not stock_code:
+                        print(f"⚠️ 未找到股票代码: {stock_name}")
+                        continue
+                    
+                    # 查询历史数据
+                    hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
+                    
+                    if hist_data is not None and not hist_data.empty:
+                        stock_data_dict[stock_code] = hist_data
+                        print(f"✅ [{i}/{len(stock_list)}] 已获取 {stock_name} ({stock_code}) 的历史数据")
+                    else:
+                        print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
+                    
+                except Exception as e:
+                    print(f"❌ 获取 {stock_name} 数据失败: {e}")
+                    continue
+            
+            return stock_data_dict
+            
+        except Exception as e:
+            print(f"❌ 批量查询股票数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+    
+    def _analyze_stocks_with_trend_tracking(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame]):
         """
         使用趋势追踪策略分析股票
+        
+        Args:
+            stock_list: 股票列表
+            date: 分析日期
+            stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
         
         Returns:
             Dict: 趋势追踪分析结果
@@ -727,7 +824,6 @@ class MarketReviewService:
             trend_strategy = IndividualTrendTrackingStrategy()
             stock_query = trend_strategy.stock_query
             
-            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
             stock_results = []
             
             for i, stock_info in enumerate(stock_list, 1):
@@ -739,7 +835,14 @@ class MarketReviewService:
                     if not stock_code:
                         continue
                     
-                    analysis_result = trend_strategy.analyze_stock_trend(stock_code, start_date, date)
+                    # 从stock_data_dict中获取数据
+                    hist_data = stock_data_dict.get(stock_code)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) 没有行情数据，跳过")
+                        continue
+                    
+                    # 使用传入的数据进行分析
+                    analysis_result = trend_strategy.analyze_stock_trend_with_data(hist_data, stock_code)
                     
                     if analysis_result:
                         signal_strength = self._calculate_buy_signal_strength(analysis_result)
@@ -767,11 +870,18 @@ class MarketReviewService:
             
         except Exception as e:
             print(f"❌ 趋势追踪策略分析失败: {e}")
+            import traceback
+            traceback.print_exc()
             return {'status': 'failed', 'error': str(e)}
     
-    def _analyze_stocks_with_oversold_rebound(self, stock_list, date):
+    def _analyze_stocks_with_oversold_rebound(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame]):
         """
         使用超跌反弹策略分析股票
+        
+        Args:
+            stock_list: 股票列表
+            date: 分析日期
+            stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
         
         Returns:
             Dict: 超跌反弹分析结果
@@ -783,7 +893,6 @@ class MarketReviewService:
             oversold_strategy = IndividualOversoldReboundStrategy()
             stock_query = oversold_strategy.stock_query
             
-            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
             stock_results = []
             
             for i, stock_info in enumerate(stock_list, 1):
@@ -795,7 +904,14 @@ class MarketReviewService:
                     if not stock_code:
                         continue
                     
-                    analysis_result = oversold_strategy.analyze_stock_oversold(stock_code, start_date, date)
+                    # 从stock_data_dict中获取数据
+                    hist_data = stock_data_dict.get(stock_code)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) 没有行情数据，跳过")
+                        continue
+                    
+                    # 使用传入的数据进行分析
+                    analysis_result = oversold_strategy.analyze_stock_oversold_with_data(hist_data, stock_code)
                     
                     if analysis_result:
                         signal_strength = self._calculate_oversold_signal_strength(analysis_result)
@@ -823,6 +939,8 @@ class MarketReviewService:
             
         except Exception as e:
             print(f"❌ 超跌反弹策略分析失败: {e}")
+            import traceback
+            traceback.print_exc()
             return {'status': 'failed', 'error': str(e)}
     
     def _merge_strategy_results(self, trend_results, oversold_results, target_sectors):
