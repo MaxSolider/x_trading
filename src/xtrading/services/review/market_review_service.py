@@ -170,6 +170,7 @@ class MarketReviewService:
             from ...static.industry_sectors import INDUSTRY_SECTORS
             from ...repositories.stock.industry_info_query import IndustryInfoQuery
             from datetime import datetime, timedelta
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
             print(f"🔍 开始综合分析 {len(INDUSTRY_SECTORS)} 个板块的表现...")
             
@@ -194,18 +195,27 @@ class MarketReviewService:
             
             print(f"✅ 成功获取 {len(sector_data_dict)}/{len(INDUSTRY_SECTORS)} 个板块的历史数据")
             
-            # 1. 量价分析
-            print(f"\n📊 第一步：进行量价分析...")
-            volume_price_analysis = self._analyze_sector_volume_price_performance(date, sector_data_dict)
+            # 1. 并行执行量价分析和MACD分析
+            print(f"\n📊 第一步：并行执行量价分析和MACD分析...")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 提交两个分析任务
+                vp_future = executor.submit(self._analyze_sector_volume_price_performance, date, sector_data_dict)
+                macd_future = executor.submit(self._analyze_sector_macd_performance, date, sector_data_dict)
+                
+                # 等待两个任务完成
+                volume_price_analysis = vp_future.result()
+                macd_analysis = macd_future.result()
             
-            # 2. MACD分析
-            print(f"\n📈 第二步：进行MACD分析...")
-            macd_analysis = self._analyze_sector_macd_performance(date, sector_data_dict)
-            
-            # 3. 合并分析结果
-            print(f"\n🔄 第三步：合并分析结果...")
+            # 2. 合并分析结果
+            print(f"\n🔄 第二步：合并分析结果...")
             combined_results = self._combine_sector_analysis_results(
                 volume_price_analysis, macd_analysis, date
+            )
+            
+            # 3. 统一生成有买入信号板块的综合图片
+            print(f"\n📸 第三步：统一生成有买入信号板块的综合图片...")
+            combined_results = self._generate_sector_combined_charts(
+                combined_results, sector_data_dict, date
             )
             
             print(f"✅ 板块综合分析完成！")
@@ -244,7 +254,6 @@ class MarketReviewService:
             
             # 存储所有板块的量价分析结果
             sector_results = {}
-            chart_paths = {}
             signal_summary = {
                 'BUY': [],
                 'HOLD': [],
@@ -278,16 +287,7 @@ class MarketReviewService:
                         print(f"⚠️ {sector_name} 量价分析失败，跳过")
                         continue
                     
-                    # 生成量价关系趋势图（使用预查询的数据）
-                    chart_path = volume_price_strategy.generate_volume_price_trend_chart_with_data(
-                        sector_name, hist_data, date, "reports/images/sectors/volume_price"
-                    )
-                    
-                    if chart_path:
-                        chart_paths[sector_name] = chart_path
-                        print(f"✅ {sector_name} 量价关系图表已生成: {chart_path}")
-                    
-                    # 存储分析结果
+                    # 存储分析结果（不生成图片，后续统一生成）
                     trading_signal = volume_price_result.get('trading_signal', {})
                     volume_price_analysis = volume_price_result.get('volume_price_analysis', {})
                     
@@ -301,7 +301,6 @@ class MarketReviewService:
                         'signal_strength': trading_signal.get('signal_strength', 0),
                         'comprehensive_score': volume_price_analysis.get('volume_price_strength', {}).get('comprehensive_score', 0),
                         'strength_level': volume_price_analysis.get('volume_price_strength', {}).get('strength_level', '未知'),
-                        'chart_path': chart_path,
                         'analysis_date': date
                     }
                     
@@ -326,7 +325,6 @@ class MarketReviewService:
                 'total_sectors': len(INDUSTRY_SECTORS),
                 'analyzed_sectors': len(sector_results),
                 'sector_results': sector_results,
-                'chart_paths': chart_paths,
                 'signal_summary': signal_summary
             }
             
@@ -354,21 +352,15 @@ class MarketReviewService:
         try:
             from ...static.industry_sectors import INDUSTRY_SECTORS
             from ...strategies.industry_sector.macd_strategy import IndustryMACDStrategy
-            from ...utils.graphics.chart_generator import ChartGenerator
             
             print(f"🔍 开始分析 {len(INDUSTRY_SECTORS)} 个板块的MACD表现...")
             
-            # 初始化策略和图表生成器
+            # 初始化策略
             macd_strategy = IndustryMACDStrategy()
-            chart_generator = ChartGenerator()
-            
-            # 创建MACD图表保存目录
-            macd_charts_dir = f"reports/images/sectors/macd"
-            os.makedirs(macd_charts_dir, exist_ok=True)
             
             # 存储所有板块的分析结果
             sector_results = {}
-            chart_paths = {}
+            macd_data_dict = {}  # 存储MACD计算数据，用于后续生成图片
             signal_summary = {
                 'buy_signals': [],
                 'sell_signals': [],
@@ -399,36 +391,23 @@ class MarketReviewService:
                         print(f"⚠️ {sector_name} MACD分析失败，跳过")
                         continue
                     
-                    # 计算MACD数据
+                    # 计算MACD数据（存储用于后续生成图片）
                     macd_data = macd_strategy.calculate_macd(hist_data)
                     if macd_data is None:
                         print(f"⚠️ {sector_name} MACD计算失败，跳过")
                         continue
                     
-                    # 生成MACD趋势图
-                    chart_filename = f"{sector_name}_{date}.png"
-                    chart_path = os.path.join(macd_charts_dir, chart_filename)
-                    
-                    chart_path_result = self._generate_macd_chart(
-                        macd_data, sector_name, date, chart_path
-                    )
-                    
-                    if chart_path_result:
-                        chart_paths[sector_name] = chart_path_result
-                        print(f"✅ {sector_name} MACD图表已生成: {chart_path_result}")
-                    else:
-                        print(f"⚠️ {sector_name} MACD图表生成失败")
-                    
-                    # 存储分析结果
+                    # 存储分析结果（不生成图片，后续统一生成）
                     sector_results[sector_name] = {
                         'latest_macd': macd_result['latest_macd'],
                         'latest_signal': macd_result['latest_signal'],
                         'latest_histogram': macd_result['latest_histogram'],
                         'current_signal_type': macd_result['current_signal_type'],
                         'zero_cross_status': macd_result['zero_cross_status'],
-                        'chart_path': chart_path_result,
                         'analysis_date': macd_result['analysis_date']
                     }
+                    # 保存MACD数据用于后续生成图片
+                    macd_data_dict[sector_name] = macd_data
                     
                     # 分类交易信号
                     signal_type = macd_result['current_signal_type']
@@ -452,21 +431,14 @@ class MarketReviewService:
             print(f"📉 卖出信号板块 ({len(signal_summary['sell_signals'])}个): {', '.join(signal_summary['sell_signals'][:5])}{'...' if len(signal_summary['sell_signals']) > 5 else ''}")
             print(f"➡️ 中性信号板块 ({len(signal_summary['neutral_signals'])}个): {', '.join(signal_summary['neutral_signals'][:5])}{'...' if len(signal_summary['neutral_signals']) > 5 else ''}")
             
-            print(f"\n📁 MACD图表保存路径:")
-            for sector_name, chart_path in list(chart_paths.items())[:5]:
-                print(f"  - {sector_name}: {chart_path}")
-            if len(chart_paths) > 5:
-                print(f"  ... 共{len(chart_paths)}个图表")
-            
             return {
                 'status': 'success',
                 'analysis_date': date,
                 'total_sectors': len(INDUSTRY_SECTORS),
                 'analyzed_sectors': len(sector_results),
                 'sector_results': sorted_sector_results,
-                'chart_paths': chart_paths,
                 'signal_summary': signal_summary,
-                'macd_charts_dir': macd_charts_dir
+                'macd_data_dict': macd_data_dict  # 保存MACD数据用于后续生成图片
             }
             
         except Exception as e:
@@ -677,6 +649,258 @@ class MarketReviewService:
             print(f"❌ 生成 {sector_name} MACD图表失败: {e}")
             return None
     
+    def _generate_sector_combined_charts(self, combined_results: Dict[str, Any], 
+                                         sector_data_dict: Dict[str, pd.DataFrame], 
+                                         date: str) -> Dict[str, Any]:
+        """
+        统一生成有买入信号板块的综合图片（量价+MACD在同一张图中）
+        
+        Args:
+            combined_results: 合并后的板块分析结果
+            sector_data_dict: 板块原始数据字典
+            date: 分析日期
+            
+        Returns:
+            Dict[str, Any]: 更新后的合并结果，包含生成的图片路径
+        """
+        try:
+            from ...strategies.industry_sector.macd_strategy import IndustryMACDStrategy
+            from ...strategies.industry_sector.volume_price_strategy import VolumePriceStrategy
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            
+            # 创建图片保存目录
+            charts_dir = "reports/images/sectors"
+            os.makedirs(charts_dir, exist_ok=True)
+            
+            # 获取有买入信号的板块（取两个策略的并集）
+            sector_results = combined_results.get('sector_results', {})
+            macd_data_dict = combined_results.get('macd_data_dict', {})
+            
+            buy_sectors = set()
+            
+            # 从量价分析中获取买入信号板块
+            vp_signal_summary = combined_results.get('vp_signal_summary', {})
+            buy_sectors.update(vp_signal_summary.get('BUY', []))
+            
+            # 从MACD分析中获取买入信号板块
+            macd_signal_summary = combined_results.get('macd_signal_summary', {})
+            buy_sectors.update(macd_signal_summary.get('buy_signals', []))
+            
+            print(f"📸 找到 {len(buy_sectors)} 个有买入信号的板块，开始生成综合图片...")
+            
+            chart_paths = {}
+            volume_price_strategy = VolumePriceStrategy()
+            
+            for i, sector_name in enumerate(buy_sectors, 1):
+                try:
+                    print(f"📊 正在生成板块 {i}/{len(buy_sectors)}: {sector_name}")
+                    
+                    # 获取板块数据
+                    hist_data = sector_data_dict.get(sector_name)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {sector_name} 没有历史数据，跳过")
+                        continue
+                    
+                    # 获取MACD数据
+                    macd_data = macd_data_dict.get(sector_name)
+                    if macd_data is None or macd_data.empty:
+                        print(f"⚠️ {sector_name} 没有MACD数据，跳过")
+                        continue
+                    
+                    # 生成综合图片
+                    chart_path = self._create_combined_sector_chart(
+                        sector_name, hist_data, macd_data, date, charts_dir, volume_price_strategy
+                    )
+                    
+                    if chart_path:
+                        chart_paths[sector_name] = chart_path
+                        print(f"✅ {sector_name} 综合图表已生成: {chart_path}")
+                    else:
+                        print(f"⚠️ {sector_name} 综合图表生成失败")
+                    
+                except Exception as e:
+                    print(f"❌ {sector_name} 综合图表生成失败: {e}")
+                    continue
+            
+            # 更新合并结果，添加图片路径
+            combined_results['combined_chart_paths'] = chart_paths
+            
+            print(f"✅ 成功生成 {len(chart_paths)}/{len(buy_sectors)} 个板块的综合图片")
+            
+            return combined_results
+            
+        except Exception as e:
+            print(f"❌ 生成板块综合图片失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return combined_results
+    
+    def _create_combined_sector_chart(self, sector_name: str, hist_data: pd.DataFrame, 
+                                      macd_data: pd.DataFrame, date: str, 
+                                      output_dir: str, volume_price_strategy) -> Optional[str]:
+        """
+        创建板块综合图表（量价+MACD）
+        
+        Args:
+            sector_name: 板块名称
+            hist_data: 历史数据
+            macd_data: MACD数据
+            date: 分析日期
+            output_dir: 输出目录
+            volume_price_strategy: 量价策略实例
+            
+        Returns:
+            Optional[str]: 生成的图表文件路径
+        """
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            
+            # 设置中文字体
+            plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans', 'Arial']
+            plt.rcParams['axes.unicode_minus'] = False
+            
+            # 创建四子图布局：价格+量价图，MACD图
+            fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+            fig.suptitle(f'{sector_name} 综合分析图 - {date}', fontsize=16, fontweight='bold', y=0.995)
+            
+            # 检测日期列名
+            date_col = None
+            for col in ['日期', 'date', 'Date']:
+                if col in hist_data.columns:
+                    date_col = col
+                    break
+            
+            if date_col is None:
+                print(f"❌ {sector_name} 未找到日期列")
+                return None
+            
+            # 确保数据按日期排序
+            hist_data = hist_data.sort_values(date_col).reset_index(drop=True)
+            dates = pd.to_datetime(hist_data[date_col])
+            
+            # 获取收盘价列
+            close_col = None
+            for col in ['收盘', '收盘价', 'close', 'Close']:
+                if col in hist_data.columns:
+                    close_col = col
+                    break
+            
+            # 获取成交量列
+            volume_col = None
+            for col in ['成交量', 'volume', 'Volume']:
+                if col in hist_data.columns:
+                    volume_col = col
+                    break
+            
+            if close_col is None or volume_col is None:
+                print(f"❌ {sector_name} 未找到价格或成交量列")
+                return None
+            
+            # === 左上：价格趋势图 ===
+            ax1 = axes[0, 0]
+            prices = hist_data[close_col]
+            
+            # 计算移动平均线
+            ma_periods = [5, 10, 20]
+            try:
+                price_mas = volume_price_strategy._calculate_raw_moving_averages(prices, ma_periods)
+            except Exception:
+                price_mas = {}
+            
+            ax1.plot(dates, prices, label='收盘价', linewidth=2, color='#1f77b4', alpha=0.8)
+            
+            # 绘制移动平均线
+            ma_colors = ['#2ca02c', '#d62728', '#9467bd']
+            for i, period in enumerate(ma_periods):
+                if period in price_mas:
+                    ax1.plot(dates, price_mas[period], label=f'MA{period}', 
+                            linewidth=1.5, color=ma_colors[i], alpha=0.7, linestyle='--')
+            
+            ax1.set_title('价格趋势', fontsize=12, fontweight='bold')
+            ax1.set_ylabel('价格', fontsize=10)
+            ax1.legend(loc='upper left', fontsize=8)
+            ax1.grid(True, alpha=0.3)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 右上：MACD价格和均线 ===
+            ax2 = axes[0, 1]
+            
+            # 确保MACD数据和hist_data对齐（使用相同的日期）
+            macd_dates = pd.to_datetime(macd_data[date_col]) if date_col in macd_data.columns else dates
+            
+            ax2.plot(macd_dates, macd_data[close_col], label='收盘价', linewidth=2, color='#1f77b4')
+            ax2.plot(macd_dates, macd_data['EMA_Fast'], label='EMA12', linewidth=1, color='#ff7f0e', alpha=0.7)
+            ax2.plot(macd_dates, macd_data['EMA_Slow'], label='EMA26', linewidth=1, color='#2ca02c', alpha=0.7)
+            
+            ax2.set_title('MACD价格趋势', fontsize=12, fontweight='bold')
+            ax2.set_ylabel('价格', fontsize=10)
+            ax2.legend(loc='upper left', fontsize=8)
+            ax2.grid(True, alpha=0.3)
+            ax2.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 左下：成交量趋势 ===
+            ax3 = axes[1, 0]
+            volumes = hist_data[volume_col]
+            
+            # 计算成交量移动平均线
+            try:
+                volume_mas = volume_price_strategy._calculate_raw_moving_averages(volumes, ma_periods)
+            except Exception:
+                volume_mas = {}
+            
+            ax3.bar(dates, volumes, label='成交量', color='#ff7f0e', alpha=0.6, width=0.8)
+            
+            # 绘制成交量移动平均线
+            for i, period in enumerate(ma_periods):
+                if period in volume_mas:
+                    ax3.plot(dates, volume_mas[period], label=f'VOL MA{period}', 
+                            linewidth=1.5, color=ma_colors[i], alpha=0.8, linestyle='--')
+            
+            ax3.set_title('成交量趋势', fontsize=12, fontweight='bold')
+            ax3.set_xlabel('日期', fontsize=10)
+            ax3.set_ylabel('成交量', fontsize=10)
+            ax3.legend(loc='upper left', fontsize=8)
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 右下：MACD指标 ===
+            ax4 = axes[1, 1]
+            ax4.plot(macd_dates, macd_data['MACD'], label='MACD', linewidth=2, color='#d62728')
+            ax4.plot(macd_dates, macd_data['Signal'], label='Signal', linewidth=2, color='#9467bd')
+            ax4.bar(macd_dates, macd_data['Histogram'], label='Histogram', alpha=0.6, color='#17becf')
+            ax4.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            
+            ax4.set_title('MACD指标', fontsize=12, fontweight='bold')
+            ax4.set_xlabel('日期', fontsize=10)
+            ax4.set_ylabel('MACD', fontsize=10)
+            ax4.legend(loc='upper left', fontsize=8)
+            ax4.grid(True, alpha=0.3)
+            ax4.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45)
+            
+            # 调整布局
+            plt.tight_layout(rect=[0, 0, 1, 0.98])
+            
+            # 生成文件路径
+            chart_path = os.path.join(output_dir, f"{sector_name}_{date}.png")
+            
+            # 保存图表
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.close()
+            
+            return chart_path
+            
+        except Exception as e:
+            print(f"❌ 创建 {sector_name} 综合图表失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
     def _analyze_stock_performance(self, date: str, sector_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
         分析个股表现
@@ -731,17 +955,28 @@ class MarketReviewService:
             
             print(f"✅ 成功获取 {len(stock_data_dict)} 只股票的行情数据")
 
-            # 4. 使用IndividualTrendTrackingStrategy分析股票
-            print(f"\n📊 第三步：使用趋势追踪策略分析...")
-            trend_results = self._analyze_stocks_with_trend_tracking(stock_list, date, stock_data_dict)
+            # 4. 并行执行趋势追踪策略分析和超跌反弹策略分析
+            print(f"\n📊 第三步：并行执行策略分析...")
+            from concurrent.futures import ThreadPoolExecutor
+            
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 提交两个分析任务
+                trend_future = executor.submit(self._analyze_stocks_with_trend_tracking, stock_list, date, stock_data_dict)
+                oversold_future = executor.submit(self._analyze_stocks_with_oversold_rebound, stock_list, date, stock_data_dict)
+                
+                # 等待两个任务完成
+                trend_results = trend_future.result()
+                oversold_results = oversold_future.result()
 
-            # 5. 使用IndividualOversoldReboundStrategy分析股票
-            print(f"\n📊 第四步：使用超跌反弹策略分析...")
-            oversold_results = self._analyze_stocks_with_oversold_rebound(stock_list, date, stock_data_dict)
+            # 5. 合并两种策略的分析结果
+            print(f"\n📊 第四步：合并分析结果...")
+            merged_results = self._merge_strategy_results(trend_results, oversold_results, target_sectors, stock_data_dict)
 
-            # 6. 合并两种策略的分析结果
-            print(f"\n📊 第五步：合并分析结果...")
-            merged_results = self._merge_strategy_results(trend_results, oversold_results, target_sectors)
+            # 6. 对有买入信号的股票生成综合图表（量价+MACD）
+            print(f"\n📊 第五步：生成有买入信号股票的综合图表...")
+            merged_results = self._generate_stock_combined_charts(
+                merged_results, stock_data_dict, date
+            )
 
             return merged_results
             
@@ -849,6 +1084,11 @@ class MarketReviewService:
                         analysis_result['stock_name'] = stock_name
                         analysis_result['stock_code'] = stock_code
                         analysis_result['signal_strength'] = signal_strength
+                        # 传递所属板块信息（可能为多个）
+                        if 'sectors' in stock_info:
+                            analysis_result['sectors'] = stock_info['sectors']
+                        elif 'sector' in stock_info:
+                            analysis_result['sectors'] = [stock_info['sector']] if stock_info['sector'] else []
                         stock_results.append(analysis_result)
                         print(f"✅ [趋势追踪] {stock_name} ({stock_code}) 分析完成，信号强度: {signal_strength:.2f}")
                     
@@ -918,6 +1158,11 @@ class MarketReviewService:
                         analysis_result['stock_name'] = stock_name
                         analysis_result['stock_code'] = stock_code
                         analysis_result['signal_strength'] = signal_strength
+                        # 传递所属板块信息（可能为多个）
+                        if 'sectors' in stock_info:
+                            analysis_result['sectors'] = stock_info['sectors']
+                        elif 'sector' in stock_info:
+                            analysis_result['sectors'] = [stock_info['sector']] if stock_info['sector'] else []
                         stock_results.append(analysis_result)
                         print(f"✅ [超跌反弹] {stock_name} ({stock_code}) 分析完成，信号强度: {signal_strength:.2f}")
                     
@@ -943,25 +1188,328 @@ class MarketReviewService:
             traceback.print_exc()
             return {'status': 'failed', 'error': str(e)}
     
-    def _merge_strategy_results(self, trend_results, oversold_results, target_sectors):
+    def _merge_strategy_results(self, trend_results, oversold_results, target_sectors, stock_data_dict=None):
         """
         合并两种策略的分析结果
         
+        Args:
+            trend_results: 趋势追踪策略结果
+            oversold_results: 超跌反弹策略结果
+            target_sectors: 目标板块列表
+            stock_data_dict: 股票数据字典（可选）
+            
         Returns:
             Dict: 合并后的结果
         """
+        # 获取有买入信号的股票（取两个策略结果的并集）
+        buy_stocks = set()
+        
+        # 从趋势追踪策略中获取买入信号股票
+        if trend_results.get('status') == 'success':
+            trend_all = trend_results.get('all_results', [])
+            for stock in trend_all:
+                signal_type = stock.get('current_signal_type', 'HOLD')
+                if signal_type in ['BUY', 'STRONG_BUY']:
+                    stock_code = stock.get('stock_code')
+                    stock_name = stock.get('stock_name')
+                    if stock_code and stock_name:
+                        buy_stocks.add((stock_code, stock_name))
+        
+        # 从超跌反弹策略中获取买入信号股票
+        if oversold_results.get('status') == 'success':
+            oversold_all = oversold_results.get('all_results', [])
+            for stock in oversold_all:
+                signal_type = stock.get('current_signal_type', 'HOLD')
+                if signal_type in ['BUY', 'STRONG_BUY']:
+                    stock_code = stock.get('stock_code')
+                    stock_name = stock.get('stock_name')
+                    if stock_code and stock_name:
+                        buy_stocks.add((stock_code, stock_name))
+        
+        # 转换为列表格式
+        buy_stocks_list = [{'stock_code': code, 'stock_name': name} for code, name in buy_stocks]
+        
         return {
             'status': 'success',
             'target_sectors': target_sectors,
             'trend_tracking': trend_results,
             'oversold_rebound': oversold_results,
+            'buy_stocks': buy_stocks_list,  # 买入信号股票列表（取并集）
             'summary': {
                 'trend_total': trend_results.get('total_analyzed', 0),
                 'oversold_total': oversold_results.get('total_analyzed', 0),
                 'trend_top_10': len(trend_results.get('top_10', [])),
-                'oversold_top_10': len(oversold_results.get('top_10', []))
+                'oversold_top_10': len(oversold_results.get('top_10', [])),
+                'buy_stocks_count': len(buy_stocks_list)
             }
         }
+    
+    def _generate_stock_combined_charts(self, merged_results: Dict[str, Any], 
+                                       stock_data_dict: Dict[str, pd.DataFrame], 
+                                       date: str) -> Dict[str, Any]:
+        """
+        对有买入信号的股票生成综合图表（量价+MACD在同一张图中）
+        
+        Args:
+            merged_results: 合并后的分析结果
+            stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
+            date: 分析日期
+            
+        Returns:
+            Dict[str, Any]: 更新后的合并结果，包含生成的图片路径
+        """
+        try:
+            from ...strategies.individual_stock.trend_tracking_strategy import IndividualTrendTrackingStrategy
+            from ...strategies.industry_sector.volume_price_strategy import VolumePriceStrategy
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            
+            # 创建图片保存目录
+            charts_dir = "reports/images/stocks"
+            os.makedirs(charts_dir, exist_ok=True)
+            
+            # 获取有买入信号的股票列表
+            buy_stocks = merged_results.get('buy_stocks', [])
+            
+            if not buy_stocks:
+                print(f"⚠️ 未找到有买入信号的股票，跳过图表生成")
+                merged_results['stock_chart_paths'] = {}
+                return merged_results
+            
+            print(f"📸 找到 {len(buy_stocks)} 只有买入信号的股票，开始生成综合图片...")
+            
+            chart_paths = {}
+            trend_strategy = IndividualTrendTrackingStrategy()
+            volume_price_strategy = VolumePriceStrategy()
+            
+            for i, stock_info in enumerate(buy_stocks, 1):
+                stock_code = stock_info['stock_code']
+                stock_name = stock_info['stock_name']
+                
+                try:
+                    print(f"📊 正在生成股票 {i}/{len(buy_stocks)}: {stock_name} ({stock_code})")
+                    
+                    # 获取股票数据
+                    hist_data = stock_data_dict.get(stock_code)
+                    if hist_data is None or hist_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) 没有历史数据，跳过")
+                        continue
+                    
+                    # 计算MACD数据
+                    macd_data = trend_strategy.calculate_macd(hist_data)
+                    if macd_data is None or macd_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) MACD计算失败，跳过")
+                        continue
+                    
+                    # 生成综合图片
+                    chart_path = self._create_combined_stock_chart(
+                        stock_name, stock_code, hist_data, macd_data, date, charts_dir, volume_price_strategy
+                    )
+                    
+                    if chart_path:
+                        chart_paths[f"{stock_code}_{stock_name}"] = chart_path
+                        print(f"✅ {stock_name} ({stock_code}) 综合图表已生成: {chart_path}")
+                    else:
+                        print(f"⚠️ {stock_name} ({stock_code}) 综合图表生成失败")
+                    
+                except Exception as e:
+                    print(f"❌ {stock_name} ({stock_code}) 综合图表生成失败: {e}")
+                    continue
+            
+            # 更新合并结果，添加图片路径
+            merged_results['stock_chart_paths'] = chart_paths
+            
+            print(f"✅ 成功生成 {len(chart_paths)}/{len(buy_stocks)} 只股票的综合图片")
+            
+            return merged_results
+            
+        except Exception as e:
+            print(f"❌ 生成股票综合图片失败: {e}")
+            import traceback
+            traceback.print_exc()
+            merged_results['stock_chart_paths'] = {}
+            return merged_results
+    
+    def _create_combined_stock_chart(self, stock_name: str, stock_code: str, 
+                                      hist_data: pd.DataFrame, macd_data: pd.DataFrame, 
+                                      date: str, output_dir: str, volume_price_strategy) -> Optional[str]:
+        """
+        创建股票综合图表（量价+MACD）
+        
+        Args:
+            stock_name: 股票名称
+            stock_code: 股票代码
+            hist_data: 历史数据
+            macd_data: MACD数据
+            date: 分析日期
+            output_dir: 输出目录
+            volume_price_strategy: 量价策略实例
+            
+        Returns:
+            Optional[str]: 生成的图表文件路径
+        """
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            
+            # 设置中文字体
+            plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans', 'Arial']
+            plt.rcParams['axes.unicode_minus'] = False
+            
+            # 创建四子图布局：价格+量价图，MACD图
+            fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+            fig.suptitle(f'{stock_name} ({stock_code}) 综合分析图 - {date}', fontsize=16, fontweight='bold', y=0.995)
+            
+            # 检测日期列名
+            date_col = None
+            for col in ['日期', 'date', 'Date', '交易日期']:
+                if col in hist_data.columns:
+                    date_col = col
+                    break
+            
+            if date_col is None:
+                print(f"❌ {stock_name} 未找到日期列")
+                return None
+            
+            # 确保数据按日期排序
+            hist_data = hist_data.sort_values(date_col).reset_index(drop=True)
+            dates = pd.to_datetime(hist_data[date_col])
+            
+            # 获取收盘价列
+            close_col = None
+            for col in ['收盘', '收盘价', 'close', 'Close']:
+                if col in hist_data.columns:
+                    close_col = col
+                    break
+            
+            # 获取成交量列
+            volume_col = None
+            for col in ['成交量', 'volume', 'Volume']:
+                if col in hist_data.columns:
+                    volume_col = col
+                    break
+            
+            if close_col is None or volume_col is None:
+                print(f"❌ {stock_name} 未找到价格或成交量列")
+                return None
+            
+            # === 左上：价格趋势图 ===
+            ax1 = axes[0, 0]
+            prices = hist_data[close_col]
+            
+            # 计算移动平均线
+            ma_periods = [5, 10, 20]
+            try:
+                price_mas = volume_price_strategy._calculate_raw_moving_averages(prices, ma_periods)
+            except Exception:
+                price_mas = {}
+            
+            ax1.plot(dates, prices, label='收盘价', linewidth=2, color='#1f77b4', alpha=0.8)
+            
+            # 绘制移动平均线
+            ma_colors = ['#2ca02c', '#d62728', '#9467bd']
+            for i, period in enumerate(ma_periods):
+                if period in price_mas:
+                    ax1.plot(dates, price_mas[period], label=f'MA{period}', 
+                            linewidth=1.5, color=ma_colors[i], alpha=0.7, linestyle='--')
+            
+            ax1.set_title('价格趋势', fontsize=12, fontweight='bold')
+            ax1.set_ylabel('价格', fontsize=10)
+            ax1.legend(loc='upper left', fontsize=8)
+            ax1.grid(True, alpha=0.3)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 右上：MACD价格和均线 ===
+            ax2 = axes[0, 1]
+            
+            # 确保MACD数据和hist_data对齐（使用相同的日期）
+            if date_col in macd_data.columns:
+                macd_dates = pd.to_datetime(macd_data[date_col])
+            else:
+                macd_dates = dates
+            
+            # 从macd_data中获取收盘价（如果存在）
+            if close_col in macd_data.columns:
+                macd_close = macd_data[close_col]
+            else:
+                macd_close = prices
+            
+            ax2.plot(macd_dates, macd_close, label='收盘价', linewidth=2, color='#1f77b4')
+            if 'EMA_Fast' in macd_data.columns:
+                ax2.plot(macd_dates, macd_data['EMA_Fast'], label='EMA12', linewidth=1, color='#ff7f0e', alpha=0.7)
+            if 'EMA_Slow' in macd_data.columns:
+                ax2.plot(macd_dates, macd_data['EMA_Slow'], label='EMA26', linewidth=1, color='#2ca02c', alpha=0.7)
+            
+            ax2.set_title('MACD价格趋势', fontsize=12, fontweight='bold')
+            ax2.set_ylabel('价格', fontsize=10)
+            ax2.legend(loc='upper left', fontsize=8)
+            ax2.grid(True, alpha=0.3)
+            ax2.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 左下：成交量趋势 ===
+            ax3 = axes[1, 0]
+            volumes = hist_data[volume_col]
+            
+            # 计算成交量移动平均线
+            try:
+                volume_mas = volume_price_strategy._calculate_raw_moving_averages(volumes, ma_periods)
+            except Exception:
+                volume_mas = {}
+            
+            ax3.bar(dates, volumes, label='成交量', color='#ff7f0e', alpha=0.6, width=0.8)
+            
+            # 绘制成交量移动平均线
+            for i, period in enumerate(ma_periods):
+                if period in volume_mas:
+                    ax3.plot(dates, volume_mas[period], label=f'VOL MA{period}', 
+                            linewidth=1.5, color=ma_colors[i], alpha=0.8, linestyle='--')
+            
+            ax3.set_title('成交量趋势', fontsize=12, fontweight='bold')
+            ax3.set_xlabel('日期', fontsize=10)
+            ax3.set_ylabel('成交量', fontsize=10)
+            ax3.legend(loc='upper left', fontsize=8)
+            ax3.grid(True, alpha=0.3)
+            ax3.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45)
+            
+            # === 右下：MACD指标 ===
+            ax4 = axes[1, 1]
+            if 'DIF' in macd_data.columns:
+                ax4.plot(macd_dates, macd_data['DIF'], label='MACD(DIF)', linewidth=2, color='#d62728')
+            if 'DEA' in macd_data.columns:
+                ax4.plot(macd_dates, macd_data['DEA'], label='Signal(DEA)', linewidth=2, color='#9467bd')
+            if 'MACD' in macd_data.columns:
+                # MACD列是柱状图（histogram = DIF - DEA）
+                ax4.bar(macd_dates, macd_data['MACD'], label='Histogram', alpha=0.6, color='#17becf')
+            ax4.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            
+            ax4.set_title('MACD指标', fontsize=12, fontweight='bold')
+            ax4.set_xlabel('日期', fontsize=10)
+            ax4.set_ylabel('MACD', fontsize=10)
+            ax4.legend(loc='upper left', fontsize=8)
+            ax4.grid(True, alpha=0.3)
+            ax4.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45)
+            
+            # 调整布局
+            plt.tight_layout(rect=[0, 0, 1, 0.98])
+            
+            # 生成文件路径：reports/images/stocks/{股票名称}_{日期}.png
+            chart_path = os.path.join(output_dir, f"{stock_name}_{date}.png")
+            
+            # 保存图表
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.close()
+            
+            return chart_path
+            
+        except Exception as e:
+            print(f"❌ 创建 {stock_name} 综合图表失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def _calculate_oversold_signal_strength(self, analysis_result):
         """
@@ -1092,25 +1640,29 @@ class MarketReviewService:
         try:
             from ...static.industry_sectors import get_stocks_by_sector
             
-            stock_list = []
-            stock_set = set()  # 用于去重
+            # 先聚合股票 -> 所属板块集合，确保一只股票可属于多个板块
+            stock_to_sectors: Dict[str, set] = {}
             
             for sector in sectors:
                 stocks = get_stocks_by_sector(sector)
                 if not stocks:
                     print(f"⚠️ 板块 {sector} 未找到股票列表")
                     continue
-                
                 for stock_name in stocks:
-                    # 使用股票名作为唯一标识
-                    if stock_name not in stock_set:
-                        stock_list.append({
-                            'name': stock_name,
-                            'sector': sector
-                        })
-                        stock_set.add(stock_name)
+                    if stock_name not in stock_to_sectors:
+                        stock_to_sectors[stock_name] = set()
+                    stock_to_sectors[stock_name].add(sector)
             
-            print(f"📈 从 {len(sectors)} 个板块中获取到 {len(stock_list)} 只股票")
+            # 构建包含多板块信息的列表
+            stock_list: List[Dict[str, Any]] = []
+            for stock_name, sector_set in stock_to_sectors.items():
+                stock_list.append({
+                    'name': stock_name,
+                    'sector': list(sector_set)[0] if sector_set else '',  # 兼容旧字段
+                    'sectors': sorted(list(sector_set))
+                })
+            
+            print(f"📈 从 {len(sectors)} 个板块中获取到 {len(stock_list)} 只股票（已聚合多板块归属）")
             
             return stock_list
             
@@ -1270,13 +1822,12 @@ class MarketReviewService:
                     'analysis_date': date
                 }
             
-            # 合并图表路径
-            macd_charts = macd_analysis.get('chart_paths', {})
-            vp_charts = volume_price_analysis.get('chart_paths', {})
-            
             # 合并信号摘要
             macd_signals = macd_analysis.get('signal_summary', {})
             vp_signals = volume_price_analysis.get('signal_summary', {})
+            
+            # 保存MACD数据字典（用于后续生成图片）
+            macd_data_dict = macd_analysis.get('macd_data_dict', {})
             
             # 返回合并结果
             return {
@@ -1285,12 +1836,11 @@ class MarketReviewService:
                 'total_sectors': len(INDUSTRY_SECTORS),
                 'analyzed_sectors': len(combined_sector_results),
                 'sector_results': combined_sector_results,
-                'macd_charts': macd_charts,
-                'vp_charts': vp_charts,
                 'macd_signal_summary': macd_signals,
                 'vp_signal_summary': vp_signals,
                 'macd_analysis': macd_analysis,
-                'volume_price_analysis': volume_price_analysis
+                'volume_price_analysis': volume_price_analysis,
+                'macd_data_dict': macd_data_dict  # 保存用于生成图片
             }
             
         except Exception as e:

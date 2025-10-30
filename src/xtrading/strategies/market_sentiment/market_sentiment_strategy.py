@@ -470,8 +470,10 @@ class MarketSentimentStrategy:
             
             if fund_flow_data is not None and not fund_flow_data.empty:
                 latest_data = fund_flow_data.iloc[-1]  # 使用最后一行数据
-                small_inflow_ratio = latest_data.get('小单净流入-净占比', 0)
-                score = 5 + small_inflow_ratio
+                main_inflow_ratio = latest_data.get('主力净流入-净占比', 0)
+                super_inflow_ratio = latest_data.get('超大单净流入-净占比', 0)
+                big_inflow_ratio = latest_data.get('大单净流入-净占比', 0)
+                score = 5 + big_inflow_ratio
             
             return round(max(0.0, min(score, 10.0)), 1)  # 限制在0-10分
             
