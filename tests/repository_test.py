@@ -50,7 +50,7 @@ def main():
     # 查询股票历史行情
     # for symbol in stocks:
     #     data_output.print_data_details(query.get_historical_quotes(symbol, '20250723', '20251021'), symbol + "股票历史行情")
-    # data_output.print_data_details(query.get_historical_quotes('002948', '20251001', '20251021'), "002948" + "股票历史行情")
+    # data_output.print_data_details(query.get_historical_quotes('002948', '20251001', '20251030'), "002948" + "股票历史行情")
 
     # 查询股票实时行情
     # for symbol in stocks:
@@ -87,7 +87,7 @@ def main():
     # 查询行业板块成分股
 
     # 查询行业板块日频行情
-    # data_output.print_data(industry_query.get_board_industry_hist('半导体', '20251001', '20251017'), "行业板块日频行情")
+    data_output.print_data(industry_query.get_board_industry_hist('半导体', '20251001', '20251030'), "行业板块日频行情")
 
     # 查询概念板块列表
     # data_output.print_data(concept_query.get_board_concept_name(), '概念板块列表')
@@ -111,7 +111,7 @@ def main():
     # data_output.print_data(market_query.get_margin_account_info(), '两融账户数据')
 
     # 获取北向资金数据
-    data_output.print_data(market_query.get_northbound_funds_data(), '北向资金数据')
+    # data_output.print_data(market_query.get_northbound_funds_data(), '北向资金数据')
 
     # 获取向上突破股票数据
     # data_output.print_data(query.get_upward_breakout_stocks(), '向上突破股票数据')

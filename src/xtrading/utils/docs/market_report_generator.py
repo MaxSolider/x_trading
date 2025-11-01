@@ -576,14 +576,30 @@ class MarketReportGenerator:
         content.append(f"**买入信号板块数量**: {len(buy_sectors)}个（量价分析和MACD分析的并集）")
         content.append("")
         
+        # 按照综合信号强度从大到小排序
+        sector_results = sector_analysis.get('sector_results', {})
+        sectors_with_strength = []
+        
+        for sector_name in buy_sectors:
+            sector_data = sector_results.get(sector_name, {})
+            combined_strength = sector_data.get('combined_signal_strength', 0)
+            sectors_with_strength.append({
+                'name': sector_name,
+                'strength': combined_strength
+            })
+        
+        # 按综合信号强度从大到小排序
+        sectors_with_strength.sort(key=lambda x: x['strength'], reverse=True)
+        
         # 显示板块图表（最多显示前20个）
         displayed_charts = 0
         max_charts = 20
         
-        for sector_name in sorted(buy_sectors):
+        for sector_info in sectors_with_strength:
             if displayed_charts >= max_charts:
                 break
             
+            sector_name = sector_info['name']
             chart_path = combined_chart_paths.get(sector_name)
             
             if chart_path:
@@ -598,7 +614,6 @@ class MarketReportGenerator:
                 content.append("")
                 
                 # 添加技术指标说明
-                sector_results = sector_analysis.get('sector_results', {})
                 sector_data = sector_results.get(sector_name, {})
                 
                 vp_signal = sector_data.get('vp_signal_type', 'UNKNOWN')
@@ -689,20 +704,6 @@ class MarketReportGenerator:
                     
                     content.append(self._generate_markdown_table(table_data))
                     content.append("")
-                
-                # 详细分析前3只
-                if top_stocks:
-                    content.append("### 详细分析")
-                    content.append("")
-                    for i, stock in enumerate(top_stocks[:3], 1):
-                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
-                        content.append(f"#### {i}. {stock_name}")
-                        content.append("")
-                        content.append(f"- **信号类型**: {stock.get('current_signal_type', 'HOLD')}")
-                        content.append(f"- **趋势状态**: {stock.get('trend_status', 'SIDEWAYS')}")
-                        content.append(f"- **信号强度**: {stock.get('signal_strength', 0):.1f}")
-                        content.append(f"- **最新收盘价**: {stock.get('latest_close', 0):.2f}")
-                        content.append("")
             
             # === 超跌反弹策略结果 ===
             if oversold_rebound.get('status') == 'success':
@@ -736,42 +737,29 @@ class MarketReportGenerator:
                     
                     content.append(self._generate_markdown_table(table_data))
                     content.append("")
-                
-                # 详细分析前3只
-                if top_stocks:
-                    content.append("### 详细分析")
-                    content.append("")
-                    for i, stock in enumerate(top_stocks[:3], 1):
-                        stock_name = stock.get('stock_name', stock.get('symbol', '未知'))
-                        content.append(f"#### {i}. {stock_name}")
-                        content.append("")
-                        content.append(f"- **信号类型**: {stock.get('current_signal_type', 'HOLD')}")
-                        content.append(f"- **超跌类型**: {stock.get('oversold_type', 'NONE')}")
-                        content.append(f"- **信号强度**: {stock.get('signal_strength', 0):.1f}")
-                        content.append(f"- **KDJ状态**: {stock.get('kdj_status', 'NORMAL')}")
-                        content.append(f"- **RSI状态**: {stock.get('rsi_status', 'NORMAL')}")
-                        content.append("")
             
             # === 展示有买入信号的股票分析图片 ===
             stock_chart_paths = stock_analysis.get('stock_chart_paths', {})
-            buy_stocks_count = stock_analysis.get('summary', {}).get('buy_stocks_count', 0)
+            top_10_stocks_for_charts = stock_analysis.get('top_10_stocks_for_charts', [])
             
-            if stock_chart_paths and buy_stocks_count > 0:
+            if stock_chart_paths and top_10_stocks_for_charts:
                 content.append("## 📊 有买入信号股票分析图")
                 content.append("")
-                content.append(f"以下展示了 {buy_stocks_count} 只有买入信号股票的综合分析图（包含量价趋势图和MACD趋势图）：")
+                content.append(f"以下展示了趋势追踪策略和超跌反弹策略 TOP10 股票的综合分析图（包含量价趋势图和MACD趋势图），按综合信号强度从大到小排列：")
                 content.append("")
                 
-                # 按股票名称排序展示
-                sorted_charts = sorted(stock_chart_paths.items(), key=lambda x: x[0])
-                
-                for chart_key, chart_path in sorted_charts:
-                    # chart_key格式为 "{stock_code}_{stock_name}"
-                    parts = chart_key.split('_', 1)
-                    if len(parts) >= 2:
-                        stock_code = parts[0]
-                        stock_name = parts[1]
-                        
+                # 按信号强度从大到小排序展示（已经在 _generate_stock_combined_charts 中排序）
+                for stock_info in top_10_stocks_for_charts:
+                    stock_code = stock_info.get('stock_code')
+                    stock_name = stock_info.get('stock_name')
+                    signal_strength = stock_info.get('signal_strength', 0)
+                    strategy = stock_info.get('strategy', '')
+                    strategy_name = '趋势追踪' if strategy == 'trend' else '超跌反弹'
+                    
+                    chart_key = f"{stock_code}_{stock_name}"
+                    chart_path = stock_chart_paths.get(chart_key)
+                    
+                    if chart_path:
                         # 获取相对路径用于Markdown显示
                         # 将绝对路径转换为相对路径（从reports目录开始）
                         if chart_path.startswith('reports/'):
@@ -788,12 +776,12 @@ class MarketReportGenerator:
                         
                         content.append(f"### {stock_name} ({stock_code})")
                         content.append("")
+                        content.append(f"**策略类型**: {strategy_name} | **信号强度**: {signal_strength:.1f}")
+                        content.append("")
                         content.append(f"![{stock_name} 综合分析图]({relative_path})")
                         content.append("")
                     else:
-                        # 如果格式不符合预期，直接显示
-                        content.append(f"![]({chart_path})")
-                        content.append("")
+                        print(f"⚠️ 未找到 {stock_name} ({stock_code}) 的图表路径")
         else:
             content.append("📊 个股分析数据")
         

@@ -3,12 +3,14 @@
 基于AKShare实现个股相关数据查询功能
 """
 
+import time
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Union, List
 from ...utils.rules.stock_code_utils import StockCodeUtils
 from ...utils.limiter.akshare_rate_limiter import rate_limit_manual
+from ...data.stock_history_dao import StockHistoryDAO
 
 class StockQuery:
     """个股信息查询类"""
@@ -16,6 +18,7 @@ class StockQuery:
     def __init__(self):
         """初始化查询类"""
         self.stock_utils = StockCodeUtils()
+        self.stock_dao = StockHistoryDAO()
         print("✅ 个股信息查询服务初始化成功")
     
     def get_stock_basic_info(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -101,6 +104,10 @@ class StockQuery:
             DataFrame: 包含实时行情信息的DataFrame
         """
         try:
+
+            # 频控：等待到可以调用API
+            rate_limit_manual()
+
             # 获取实时行情
             realtime_data = ak.stock_zh_a_spot_em()
             # 筛选指定股票
@@ -114,42 +121,175 @@ class StockQuery:
         except Exception as e:
             print(f"❌ 获取 {symbol} 实时行情失败: {e}")
             return None
-    
-    def get_historical_quotes(self, symbol: str, start_date: str = None, end_date: str = None) -> Optional[pd.DataFrame]:
+
+    def get_realtime_quotes_list(self) -> Optional[pd.DataFrame]:
         """
-        查询历史行情
+        查询实时行情
         
         Args:
-            symbol: 股票代码 (如: 000001)
-            start_date: 开始日期 (格式: YYYYMMDD)
-            end_date: 结束日期 (格式: YYYYMMDD)
+            symbol: 股票代码
             
         Returns:
-            DataFrame: 包含历史行情信息的DataFrame
+            DataFrame: 包含实时行情信息的DataFrame
         """
         try:
-            # 设置默认日期范围
-            if not end_date:
-                end_date = datetime.now().strftime('%Y%m%d')
-            if not start_date:
-                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-            
+
             # 频控：等待到可以调用API
             rate_limit_manual()
-            
-            # 获取历史行情
-            historical_data = ak.stock_zh_a_daily(
-                symbol = self.stock_utils.add_market_prefix(symbol, True),
-                # period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="qfq" # 默认前复权
-            )
-            print(f"✅ 成功获取 {symbol} 历史行情 ({start_date} 到 {end_date})")
-            return historical_data
+
+            # 获取实时行情
+            realtime_data = ak.stock_zh_a_spot_em()
+            return realtime_data
         except Exception as e:
-            print(f"❌ 获取 {symbol} 历史行情失败: {e}")
+            print(f"❌ 获取实时行情失败: {e}")
             return None
+
+    def get_all_stock(self) -> Optional[pd.DataFrame]:
+        """
+        查询所有股票列表
+
+        Returns:
+            DataFrame: A股股票列表，包含code和name
+        """
+        try:
+
+            # 频控：等待到可以调用API
+            rate_limit_manual()
+
+            # 获取所有A股股票列表
+            stock_info_a_code_name_df = ak.stock_info_a_code_name()
+            return stock_info_a_code_name_df
+        except Exception as e:
+            print(f"❌ 获取股票列表失败: {e}")
+            return None
+
+    
+    def get_historical_quotes(self, symbol: Union[str, List[str]], start_date: str = None, end_date: str = None, use_db: bool = True) -> Optional[pd.DataFrame]:
+        """
+        查询历史行情（支持批量查询）
+        
+        Args:
+            symbol: 股票代码 (如: 000001) 或股票代码列表 (如: ['000001', '000002'])
+            start_date: 开始日期 (格式: YYYYMMDD)
+            end_date: 结束日期 (格式: YYYYMMDD)
+            use_db: 是否从数据库查询，默认为 True。如果为 False，则从 akshare 接口查询
+            
+        Returns:
+            DataFrame: 历史行情数据
+            如果单个股票代码，返回列：date, open, high, low, close, volume, amount, outstanding_share, turnover
+            如果批量查询，返回列：code, date, open, high, low, close, volume, amount, outstanding_share, turnover
+        """
+        # 统一处理为列表
+        is_batch = isinstance(symbol, list)
+        symbols = symbol if is_batch else [symbol]
+        
+        if not symbols:
+            return pd.DataFrame()
+        
+        # 如果从数据库查询
+        if use_db:
+            try:
+                if is_batch:
+                    # 批量查询
+                    df = self.stock_dao.query_by_codes(symbols, start_date, end_date)
+                else:
+                    # 单个查询
+                    df = self.stock_dao.query_by_code(symbols[0], start_date, end_date)
+                
+                if df is not None and not df.empty:
+                    # 移除数据库返回的 id 列
+                    df = df.drop(columns=['id'], errors='ignore')
+                    
+                    # 如果是单个查询，移除 code 列以保持与接口返回格式一致
+                    # 如果是批量查询，保留 code 列以便区分不同股票
+                    if not is_batch and 'code' in df.columns:
+                        df = df.drop(columns=['code'])
+                    
+                    if is_batch:
+                        print(f"✅ 成功从数据库批量获取 {len(symbols)} 只股票的历史行情 ({len(df)} 条记录)")
+                    else:
+                        print(f"✅ 成功从数据库获取 {symbols[0]} 历史行情 ({len(df)} 条记录)")
+                    return df
+                else:
+                    if is_batch:
+                        print(f"⚠️ 数据库中未找到批量股票的历史行情数据，尝试从接口获取")
+                    else:
+                        print(f"⚠️ 数据库中未找到 {symbols[0]} 的历史行情数据，尝试从接口获取")
+                    # 如果数据库中没有数据，继续从接口查询
+            except Exception as e:
+                if is_batch:
+                    print(f"⚠️ 从数据库批量查询历史行情失败: {e}，尝试从接口获取")
+                else:
+                    print(f"⚠️ 从数据库查询 {symbols[0]} 历史行情失败: {e}，尝试从接口获取")
+                # 查询失败，继续从接口查询
+        
+        # 从接口查询（循环遍历）
+        # 设置默认日期范围
+        if not end_date:
+            end_date = datetime.now().strftime('%Y%m%d')
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+        
+        results = []
+        failed_symbols = []
+        
+        for idx, sym in enumerate(symbols, 1):
+            max_retries = 3
+            retry_count = 0
+            success = False
+            
+            while retry_count < max_retries:
+                try:
+                    # 频控：等待到可以调用API
+                    rate_limit_manual()
+                    
+                    # 获取历史行情
+                    historical_data = ak.stock_zh_a_daily(
+                        symbol=self.stock_utils.add_market_prefix(stock_code=sym, lower_case=True),
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust="qfq"  # 默认前复权
+                    )
+                    
+                    # 检查返回数据是否为空
+                    if historical_data is None or (isinstance(historical_data, pd.DataFrame) and historical_data.empty):
+                        raise ValueError(f"返回数据为空")
+                    
+                    # 如果是批量查询，添加 code 列
+                    if is_batch:
+                        historical_data = historical_data.copy()
+                        historical_data['code'] = sym
+                    
+                    results.append(historical_data)
+                    success = True
+                    if is_batch:
+                        print(f"✅ [{idx}/{len(symbols)}] 成功从接口获取 {sym} 历史行情")
+                    else:
+                        print(f"✅ 成功从接口获取 {sym} 历史行情 ({start_date} 到 {end_date})")
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        failed_symbols.append(sym)
+                        if is_batch:
+                            print(f"❌ [{idx}/{len(symbols)}] 获取 {sym} 历史行情失败（已重试{max_retries}次）: {e}")
+                        else:
+                            print(f"❌ 获取 {sym} 历史行情失败（已重试{max_retries}次）: {e}")
+            
+            if not success and not is_batch:
+                return None
+        
+        # 合并结果
+        if results:
+            combined_df = pd.concat(results, ignore_index=True)
+            if is_batch:
+                # 按 code 和 date 排序
+                if 'code' in combined_df.columns and 'date' in combined_df.columns:
+                    combined_df = combined_df.sort_values(['code', 'date'])
+                print(f"✅ 批量查询完成：成功 {len(results)}/{len(symbols)}，失败 {len(failed_symbols)}")
+            return combined_df
+        else:
+            return pd.DataFrame() if is_batch else None
     
     def get_intraday_tick_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """

@@ -179,19 +179,42 @@ class MarketReviewService:
             industry_query = IndustryInfoQuery()
             start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
             
+            # 批量查询所有板块历史数据
             sector_data_dict = {}
-            for i, sector_name in enumerate(INDUSTRY_SECTORS, 1):
-                try:
-                    print(f"📊 正在获取板块 {i}/{len(INDUSTRY_SECTORS)}: {sector_name}")
-                    hist_data = industry_query.get_board_industry_hist(sector_name, start_date, date)
-                    if hist_data is not None and not hist_data.empty:
-                        sector_data_dict[sector_name] = hist_data
-                        print(f"✅ {sector_name} 历史数据获取成功")
+            try:
+                print(f"📊 正在批量获取 {len(INDUSTRY_SECTORS)} 个板块的历史数据...")
+                df_all = industry_query.get_board_industry_hist(INDUSTRY_SECTORS, start_date, date)
+                
+                if df_all is not None and not df_all.empty:
+                    # 批量查询返回的数据包含 industry 列，按 industry 分组
+                    if 'industry' in df_all.columns:
+                        for sector_name in INDUSTRY_SECTORS:
+                            df_sector = df_all[df_all['industry'] == sector_name].copy()
+                            if not df_sector.empty:
+                                # 移除 industry 列
+                                df_sector = df_sector.drop(columns=['industry'], errors='ignore')
+                                sector_data_dict[sector_name] = df_sector
+                        
+                        print(f"✅ 成功批量获取 {len(sector_data_dict)}/{len(INDUSTRY_SECTORS)} 个板块的历史数据")
                     else:
-                        print(f"⚠️ {sector_name} 历史数据获取失败")
-                except Exception as e:
-                    print(f"❌ {sector_name} 历史数据获取失败: {e}")
-                    continue
+                        print(f"⚠️ 批量查询返回数据格式异常，未包含 industry 列")
+                else:
+                    print(f"⚠️ 批量查询返回数据为空")
+            except Exception as e:
+                print(f"⚠️ 批量查询失败: {e}，降级为逐个查询")
+                # 如果批量查询失败，降级为逐个查询
+                for i, sector_name in enumerate(INDUSTRY_SECTORS, 1):
+                    try:
+                        print(f"📊 正在获取板块 {i}/{len(INDUSTRY_SECTORS)}: {sector_name}")
+                        hist_data = industry_query.get_board_industry_hist(sector_name, start_date, date)
+                        if hist_data is not None and not hist_data.empty:
+                            sector_data_dict[sector_name] = hist_data
+                            print(f"✅ {sector_name} 历史数据获取成功")
+                        else:
+                            print(f"⚠️ {sector_name} 历史数据获取失败")
+                    except Exception as ex:
+                        print(f"❌ {sector_name} 历史数据获取失败: {ex}")
+                        continue
             
             print(f"✅ 成功获取 {len(sector_data_dict)}/{len(INDUSTRY_SECTORS)} 个板块的历史数据")
             
@@ -941,9 +964,25 @@ class MarketReviewService:
             
             print(f"📈 找到 {len(stock_list)} 只待分析股票")
 
-            # 3. 批量查询股票近90天的日频行情数据
-            print(f"\n📊 第二步：批量查询股票近90天的日频行情数据...")
-            stock_data_dict = self._batch_query_stock_data(stock_list, date)
+            # 3. 获取所有股票代码和名称的映射（一次性调用）
+            print(f"\n📊 第二步：获取股票代码映射...")
+            from ...repositories.stock.stock_query import StockQuery
+            stock_query = StockQuery()
+            stock_map = self._build_stock_code_map(stock_query)
+            
+            if not stock_map:
+                print("⚠️ 无法获取股票代码映射")
+                return {
+                    'status': 'no_data',
+                    'message': '无法获取股票代码映射',
+                    'analysis_date': date
+                }
+            
+            print(f"✅ 成功获取股票代码映射（共 {len(stock_map)} 条）")
+
+            # 4. 批量查询股票近120天的日频行情数据
+            print(f"\n📊 第三步：批量查询股票近120天的日频行情数据...")
+            stock_data_dict = self._batch_query_stock_data(stock_list, date, stock_map)
             
             if not stock_data_dict:
                 print("⚠️ 未获取到股票行情数据")
@@ -955,25 +994,25 @@ class MarketReviewService:
             
             print(f"✅ 成功获取 {len(stock_data_dict)} 只股票的行情数据")
 
-            # 4. 并行执行趋势追踪策略分析和超跌反弹策略分析
-            print(f"\n📊 第三步：并行执行策略分析...")
+            # 5. 并行执行趋势追踪策略分析和超跌反弹策略分析
+            print(f"\n📊 第四步：并行执行策略分析...")
             from concurrent.futures import ThreadPoolExecutor
             
             with ThreadPoolExecutor(max_workers=2) as executor:
                 # 提交两个分析任务
-                trend_future = executor.submit(self._analyze_stocks_with_trend_tracking, stock_list, date, stock_data_dict)
-                oversold_future = executor.submit(self._analyze_stocks_with_oversold_rebound, stock_list, date, stock_data_dict)
+                trend_future = executor.submit(self._analyze_stocks_with_trend_tracking, stock_list, date, stock_data_dict, stock_map)
+                oversold_future = executor.submit(self._analyze_stocks_with_oversold_rebound, stock_list, date, stock_data_dict, stock_map)
                 
                 # 等待两个任务完成
                 trend_results = trend_future.result()
                 oversold_results = oversold_future.result()
 
-            # 5. 合并两种策略的分析结果
-            print(f"\n📊 第四步：合并分析结果...")
+            # 6. 合并两种策略的分析结果
+            print(f"\n📊 第五步：合并分析结果...")
             merged_results = self._merge_strategy_results(trend_results, oversold_results, target_sectors, stock_data_dict)
 
-            # 6. 对有买入信号的股票生成综合图表（量价+MACD）
-            print(f"\n📊 第五步：生成有买入信号股票的综合图表...")
+            # 7. 对有买入信号的股票生成综合图表（量价+MACD）
+            print(f"\n📊 第六步：生成有买入信号股票的综合图表...")
             merged_results = self._generate_stock_combined_charts(
                 merged_results, stock_data_dict, date
             )
@@ -990,13 +1029,67 @@ class MarketReviewService:
                 'analysis_date': date
             }
     
-    def _batch_query_stock_data(self, stock_list: List[Dict[str, str]], date: str) -> Dict[str, pd.DataFrame]:
+    def _build_stock_code_map(self, stock_query) -> Dict[str, str]:
         """
-        批量查询股票近90天的日频行情数据
+        构建股票名称到代码的映射字典
+        
+        Args:
+            stock_query: StockQuery 实例
+            
+        Returns:
+            Dict[str, str]: {股票名称: 股票代码}
+        """
+        try:
+            # 获取所有股票列表
+            stocks_df = stock_query.get_all_stock()
+            if stocks_df is None or stocks_df.empty:
+                print("⚠️ 获取股票列表失败")
+                return {}
+            
+            # 查找代码列和名称列
+            code_col = None
+            name_col = None
+            
+            for col in stocks_df.columns:
+                col_lower = col.lower()
+                if col_lower in ('code', '代码', 'symbol'):
+                    code_col = col
+                elif col_lower in ('name', '名称'):
+                    name_col = col
+            
+            if code_col is None or name_col is None:
+                # 如果找不到标准列名，尝试使用前两列
+                if len(stocks_df.columns) >= 2:
+                    code_col = stocks_df.columns[0]
+                    name_col = stocks_df.columns[1]
+                else:
+                    print("⚠️ 无法识别股票列表的列结构")
+                    return {}
+            
+            # 构建映射字典
+            stock_map = {}
+            for _, row in stocks_df.iterrows():
+                stock_code = str(row[code_col]).strip() if pd.notna(row[code_col]) else None
+                stock_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else None
+                
+                if stock_code and stock_name:
+                    stock_map[stock_name] = stock_code
+            
+            print(f"✅ 成功构建股票代码映射，共 {len(stock_map)} 条")
+            return stock_map
+            
+        except Exception as e:
+            print(f"❌ 构建股票代码映射失败: {e}")
+            return {}
+
+    def _batch_query_stock_data(self, stock_list: List[Dict[str, str]], date: str, stock_map: Dict[str, str]) -> Dict[str, pd.DataFrame]:
+        """
+        批量查询股票近120天的日频行情数据
         
         Args:
             stock_list: 股票列表，格式为 [{'name': '股票名', 'sector': '板块名'}, ...]
             date: 分析日期
+            stock_map: 股票名称到代码的映射字典 {股票名称: 股票代码}
             
         Returns:
             Dict[str, pd.DataFrame]: 股票代码到历史数据的映射
@@ -1010,26 +1103,89 @@ class MarketReviewService:
             
             stock_data_dict = {}
             
+            # 第一步：从映射中查找股票代码
+            print(f"📊 第一步：从映射中查找股票代码...")
+            stock_code_map = {}  # {stock_name: stock_code}
             for i, stock_info in enumerate(stock_list, 1):
                 stock_name = stock_info['name']
                 try:
-                    # 查询股票代码
-                    stock_code = stock_query.search_stock_by_name(stock_name)
-                    if not stock_code:
-                        print(f"⚠️ 未找到股票代码: {stock_name}")
-                        continue
-                    
-                    # 查询历史数据
-                    hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
-                    
-                    if hist_data is not None and not hist_data.empty:
-                        stock_data_dict[stock_code] = hist_data
-                        print(f"✅ [{i}/{len(stock_list)}] 已获取 {stock_name} ({stock_code}) 的历史数据")
+                    # 从映射中查找股票代码
+                    stock_code = stock_map.get(stock_name)
+                    if stock_code:
+                        stock_code_map[stock_name] = stock_code
+                        print(f"✅ [{i}/{len(stock_list)}] 找到 {stock_name} 的代码: {stock_code}")
                     else:
-                        print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
-                    
+                        print(f"⚠️ [{i}/{len(stock_list)}] 未找到股票代码: {stock_name}")
                 except Exception as e:
-                    print(f"❌ 获取 {stock_name} 数据失败: {e}")
+                    print(f"❌ [{i}/{len(stock_list)}] 查找 {stock_name} 代码失败: {e}")
+            
+            if not stock_code_map:
+                print(f"⚠️ 未找到任何股票代码")
+                return {}
+            
+            # 第二步：批量查询所有股票的历史数据
+            print(f"\n📊 第二步：批量查询 {len(stock_code_map)} 只股票的历史数据...")
+            codes = list(stock_code_map.values())
+            
+            try:
+                # 批量查询所有股票历史数据
+                df_all = stock_query.get_historical_quotes(codes, start_date, date)
+                
+                if df_all is not None and not df_all.empty:
+                    # 批量查询返回的数据包含 code 列，按 code 分组
+                    if 'code' in df_all.columns:
+                        for stock_name, stock_code in stock_code_map.items():
+                            df_code = df_all[df_all['code'] == stock_code].copy()
+                            if not df_code.empty:
+                                # 移除 code 列
+                                df_code = df_code.drop(columns=['code'], errors='ignore')
+                                stock_data_dict[stock_code] = df_code
+                                print(f"✅ 已获取 {stock_name} ({stock_code}) 的历史数据")
+                            else:
+                                print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
+                        
+                        print(f"✅ 成功批量获取 {len(stock_data_dict)}/{len(stock_code_map)} 只股票的历史数据")
+                    else:
+                        print(f"⚠️ 批量查询返回数据格式异常，未包含 code 列")
+                        # 降级为逐个查询
+                        for stock_name, stock_code in stock_code_map.items():
+                            try:
+                                hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
+                                if hist_data is not None and not hist_data.empty:
+                                    stock_data_dict[stock_code] = hist_data
+                                    print(f"✅ 已获取 {stock_name} ({stock_code}) 的历史数据")
+                                else:
+                                    print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
+                            except Exception as e:
+                                print(f"❌ 获取 {stock_name} ({stock_code}) 数据失败: {e}")
+                                continue
+                else:
+                    print(f"⚠️ 批量查询返回数据为空，降级为逐个查询")
+                    # 降级为逐个查询
+                    for stock_name, stock_code in stock_code_map.items():
+                        try:
+                            hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
+                            if hist_data is not None and not hist_data.empty:
+                                stock_data_dict[stock_code] = hist_data
+                                print(f"✅ 已获取 {stock_name} ({stock_code}) 的历史数据")
+                            else:
+                                print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
+                        except Exception as e:
+                            print(f"❌ 获取 {stock_name} ({stock_code}) 数据失败: {e}")
+                            continue
+            except Exception as e:
+                print(f"⚠️ 批量查询失败: {e}，降级为逐个查询")
+                # 如果批量查询失败，降级为逐个查询
+                for stock_name, stock_code in stock_code_map.items():
+                    try:
+                        hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
+                        if hist_data is not None and not hist_data.empty:
+                            stock_data_dict[stock_code] = hist_data
+                            print(f"✅ 已获取 {stock_name} ({stock_code}) 的历史数据")
+                        else:
+                            print(f"⚠️ 未获取到 {stock_name} ({stock_code}) 的历史数据")
+                    except Exception as ex:
+                        print(f"❌ 获取 {stock_name} ({stock_code}) 数据失败: {ex}")
                     continue
             
             return stock_data_dict
@@ -1040,7 +1196,7 @@ class MarketReviewService:
             traceback.print_exc()
             return {}
     
-    def _analyze_stocks_with_trend_tracking(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame]):
+    def _analyze_stocks_with_trend_tracking(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame], stock_map: Dict[str, str]):
         """
         使用趋势追踪策略分析股票
         
@@ -1048,6 +1204,7 @@ class MarketReviewService:
             stock_list: 股票列表
             date: 分析日期
             stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
+            stock_map: 股票名称到代码的映射字典 {股票名称: 股票代码}
         
         Returns:
             Dict: 趋势追踪分析结果
@@ -1057,7 +1214,6 @@ class MarketReviewService:
             from datetime import datetime, timedelta
             
             trend_strategy = IndividualTrendTrackingStrategy()
-            stock_query = trend_strategy.stock_query
             
             stock_results = []
             
@@ -1066,7 +1222,8 @@ class MarketReviewService:
                 try:
                     print(f"📊 [趋势追踪] 正在分析股票 {i}/{len(stock_list)}: {stock_name}")
                     
-                    stock_code = stock_query.search_stock_by_name(stock_name)
+                    # 从映射中查找股票代码
+                    stock_code = stock_map.get(stock_name)
                     if not stock_code:
                         continue
                     
@@ -1114,7 +1271,7 @@ class MarketReviewService:
             traceback.print_exc()
             return {'status': 'failed', 'error': str(e)}
     
-    def _analyze_stocks_with_oversold_rebound(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame]):
+    def _analyze_stocks_with_oversold_rebound(self, stock_list, date, stock_data_dict: Dict[str, pd.DataFrame], stock_map: Dict[str, str]):
         """
         使用超跌反弹策略分析股票
         
@@ -1122,6 +1279,7 @@ class MarketReviewService:
             stock_list: 股票列表
             date: 分析日期
             stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
+            stock_map: 股票名称到代码的映射字典 {股票名称: 股票代码}
         
         Returns:
             Dict: 超跌反弹分析结果
@@ -1131,7 +1289,6 @@ class MarketReviewService:
             from datetime import datetime, timedelta
             
             oversold_strategy = IndividualOversoldReboundStrategy()
-            stock_query = oversold_strategy.stock_query
             
             stock_results = []
             
@@ -1140,7 +1297,8 @@ class MarketReviewService:
                 try:
                     print(f"📊 [超跌反弹] 正在分析股票 {i}/{len(stock_list)}: {stock_name}")
                     
-                    stock_code = stock_query.search_stock_by_name(stock_name)
+                    # 从映射中查找股票代码
+                    stock_code = stock_map.get(stock_name)
                     if not stock_code:
                         continue
                     
@@ -1268,26 +1426,53 @@ class MarketReviewService:
             charts_dir = "reports/images/stocks"
             os.makedirs(charts_dir, exist_ok=True)
             
-            # 获取有买入信号的股票列表
-            buy_stocks = merged_results.get('buy_stocks', [])
+            # 获取趋势追踪策略和超跌反弹策略的 top_10 股票
+            trend_tracking = merged_results.get('trend_tracking', {})
+            oversold_rebound = merged_results.get('oversold_rebound', {})
             
-            if not buy_stocks:
-                print(f"⚠️ 未找到有买入信号的股票，跳过图表生成")
+            # 收集 top_10 股票列表（去重）
+            top_10_stocks = set()
+            
+            # 从趋势追踪策略获取 top_10
+            if trend_tracking.get('status') == 'success':
+                trend_top_10 = trend_tracking.get('top_10', [])
+                for stock in trend_top_10:
+                    stock_code = stock.get('stock_code')
+                    stock_name = stock.get('stock_name')
+                    if stock_code and stock_name:
+                        top_10_stocks.add((stock_code, stock_name, stock.get('signal_strength', 0), 'trend'))
+            
+            # 从超跌反弹策略获取 top_10
+            if oversold_rebound.get('status') == 'success':
+                oversold_top_10 = oversold_rebound.get('top_10', [])
+                for stock in oversold_top_10:
+                    stock_code = stock.get('stock_code')
+                    stock_name = stock.get('stock_name')
+                    if stock_code and stock_name:
+                        top_10_stocks.add((stock_code, stock_name, stock.get('signal_strength', 0), 'oversold'))
+            
+            if not top_10_stocks:
+                print(f"⚠️ 未找到 top_10 股票，跳过图表生成")
                 merged_results['stock_chart_paths'] = {}
                 return merged_results
             
-            print(f"📸 找到 {len(buy_stocks)} 只有买入信号的股票，开始生成综合图片...")
+            # 转换为列表并按信号强度排序
+            stocks_list = [{'stock_code': code, 'stock_name': name, 'signal_strength': strength, 'strategy': strat} 
+                          for code, name, strength, strat in top_10_stocks]
+            stocks_list.sort(key=lambda x: x['signal_strength'], reverse=True)
+            
+            print(f"📸 找到 {len(stocks_list)} 只 top_10 股票，开始生成综合图片...")
             
             chart_paths = {}
             trend_strategy = IndividualTrendTrackingStrategy()
             volume_price_strategy = VolumePriceStrategy()
             
-            for i, stock_info in enumerate(buy_stocks, 1):
+            for i, stock_info in enumerate(stocks_list, 1):
                 stock_code = stock_info['stock_code']
                 stock_name = stock_info['stock_name']
                 
                 try:
-                    print(f"📊 正在生成股票 {i}/{len(buy_stocks)}: {stock_name} ({stock_code})")
+                    print(f"📊 正在生成股票 {i}/{len(stocks_list)}: {stock_name} ({stock_code})")
                     
                     # 获取股票数据
                     hist_data = stock_data_dict.get(stock_code)
@@ -1316,10 +1501,11 @@ class MarketReviewService:
                     print(f"❌ {stock_name} ({stock_code}) 综合图表生成失败: {e}")
                     continue
             
-            # 更新合并结果，添加图片路径
+            # 更新合并结果，添加图片路径和排序后的股票列表信息
             merged_results['stock_chart_paths'] = chart_paths
+            merged_results['top_10_stocks_for_charts'] = stocks_list
             
-            print(f"✅ 成功生成 {len(chart_paths)}/{len(buy_stocks)} 只股票的综合图片")
+            print(f"✅ 成功生成 {len(chart_paths)}/{len(stocks_list)} 只 top_10 股票的综合图片")
             
             return merged_results
             

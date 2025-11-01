@@ -3,6 +3,9 @@ AKShare股票日线数据查询工具 - 主程序
 """
 
 import time
+from .data.db import ensure_database_exists
+from .data.schema_init import initialize_database_and_tables
+from .data.data_loader import DataLoader
 from .strategies.industry_sector.backtest import StrategyBacktest
 from .services.signal.sector_signal_service import SectorSignalService
 from .services.projection.projection_service import ProjectionService
@@ -362,7 +365,6 @@ def test_market_review_service():
         print("\n📊 正在执行市场复盘分析...")
         review_result = review_service.conduct_market_review()
 
-
         # 打印复盘结果摘要
         review_service.print_review_summary(review_result)
 
@@ -370,6 +372,37 @@ def test_market_review_service():
         print(f"❌ 测试过程中发生错误: {e}")
         import traceback
         traceback.print_exc()
+
+def test_data_loader_service():
+    """测试数据加载服务"""
+    print("🧪 开始测试数据加载服务...")
+    try:
+        # 1) 初始化数据库与表
+        ensure_database_exists()
+        initialize_database_and_tables()
+
+        # 2) 创建数据加载器
+        loader = DataLoader()
+        print("✅ 数据加载器初始化成功")
+
+        # 3) 执行加载：行业与股票近3个月数据
+        start_ts = time.time()
+        print("📥 开始加载行业板块近4个月数据...")
+        # loader.load_industry_history_last_4m()
+        print("✅ 行业板块数据加载完成")
+
+        print("📥 开始加载股票近4个月数据...")
+        loader.load_stock_history_last_4m()
+        print("✅ 股票数据加载完成")
+
+        duration = time.time() - start_ts
+        print(f"⏱️ 总耗时: {duration:.2f} 秒")
+        return True
+    except Exception as e:
+        print(f"❌ 测试数据加载服务失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def main():
@@ -396,6 +429,9 @@ def main():
     
     # 测试日期工具类
     # print(DateUtils.get_recent_trading_day('20251026'))
+
+    # 测试数据加载服务
+    # test_data_loader_service()
 
 
 
