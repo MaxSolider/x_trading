@@ -314,9 +314,26 @@ class MarketReviewService:
                     trading_signal = volume_price_result.get('trading_signal', {})
                     volume_price_analysis = volume_price_result.get('volume_price_analysis', {})
                     
+                    # 从历史数据中获取最新成交额
+                    latest_turnover = 0
+                    try:
+                        if hist_data is not None and not hist_data.empty:
+                            # 检测成交额列名（支持 '成交额', 'turnover', '成交金额'）
+                            turnover_col = None
+                            for col in ['成交额', '成交金额', 'turnover', 'Turnover', 'amount']:
+                                if col in hist_data.columns:
+                                    turnover_col = col
+                                    break
+                            
+                            if turnover_col:
+                                latest_turnover = float(hist_data[turnover_col].iloc[-1]) if not hist_data[turnover_col].iloc[-1] is None else 0
+                    except Exception as e:
+                        print(f"⚠️ {sector_name} 获取成交额失败: {e}")
+                    
                     sector_results[sector_name] = {
                         'latest_price': volume_price_analysis.get('latest_price', 0),
                         'latest_volume': volume_price_analysis.get('latest_volume', 0),
+                        'latest_turnover': latest_turnover,
                         'price_change_pct': volume_price_analysis.get('price_change_pct', 0),
                         'volume_change_pct': volume_price_analysis.get('volume_change_pct', 0),
                         'latest_relationship': volume_price_analysis.get('latest_relationship', '未知'),
@@ -1991,6 +2008,7 @@ class MarketReviewService:
                     # 量价分析结果
                     'vp_price': vp_data.get('latest_price', 0),
                     'vp_volume': vp_data.get('latest_volume', 0),
+                    'vp_turnover': vp_data.get('latest_turnover', 0),
                     'vp_price_change': vp_data.get('price_change_pct', 0),
                     'vp_volume_change': vp_data.get('volume_change_pct', 0),
                     'vp_relationship': vp_data.get('latest_relationship', '未知'),

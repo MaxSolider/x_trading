@@ -401,8 +401,8 @@ class MarketReportGenerator:
             # 一、量价分析结果
             content.extend(self._build_volume_price_analysis_section(volume_price_analysis))
             
-            # 二、MACD分析结果
-            content.extend(self._build_macd_analysis_section(macd_analysis))
+            # 二、MACD分析结果（传入量价分析结果以便获取成交额）
+            content.extend(self._build_macd_analysis_section(macd_analysis, volume_price_analysis))
             
             # 三、有买入信号板块的综合图片（取两个策略分析结果的并集）
             content.extend(self._build_combined_charts_section(sector_analysis))
@@ -490,12 +490,13 @@ class MarketReportGenerator:
         sorted_signals = sorted(signals, key=lambda x: get_avg_change(x), reverse=True)
         return sorted_signals
     
-    def _build_macd_analysis_section(self, macd_analysis: Dict[str, Any]) -> list:
+    def _build_macd_analysis_section(self, macd_analysis: Dict[str, Any], volume_price_analysis: Dict[str, Any] = None) -> list:
         """
         构建MACD分析部分
         
         Args:
             macd_analysis: MACD分析数据
+            volume_price_analysis: 量价分析数据（用于获取成交额）
             
         Returns:
             list: MACD分析部分内容
@@ -512,16 +513,16 @@ class MarketReportGenerator:
             # 买入信号板块
             buy_signals = signal_summary.get('buy_signals', [])
             if buy_signals:
-                content.extend(self._build_macd_buy_signals_section(buy_signals, all_sectors))
+                content.extend(self._build_macd_buy_signals_section(buy_signals, all_sectors, volume_price_analysis))
             
             # 卖出信号板块
             sell_signals = signal_summary.get('sell_signals', [])
-            content.extend(self._build_macd_sell_signals_section(sell_signals, all_sectors))
+            content.extend(self._build_macd_sell_signals_section(sell_signals, all_sectors, volume_price_analysis))
             
             # 中性信号板块（TOP10）
             neutral_signals = signal_summary.get('neutral_signals', [])
             if neutral_signals:
-                content.extend(self._build_macd_neutral_signals_section(neutral_signals, all_sectors))
+                content.extend(self._build_macd_neutral_signals_section(neutral_signals, all_sectors, volume_price_analysis))
             
             # MACD趋势图
             macd_charts = macd_analysis.get('chart_paths', {})
@@ -1013,15 +1014,16 @@ class MarketReportGenerator:
         content.append("")
         
         if buy_signals:
-            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 |")
-            content.append("|------|----------|----------|--------|------|")
+            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 | 成交额 |")
+            content.append("|------|----------|----------|--------|------|-------------|")
             
             for i, sector_name in enumerate(buy_signals, 1):
                 sector_data = sector_results.get(sector_name, {})
                 relationship = sector_data.get('latest_relationship', '未知')
                 volume_change = sector_data.get('volume_change_pct', 0)
                 price_change = sector_data.get('price_change_pct', 0)
-                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% |")
+                turnover = sector_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% | {turnover:,.0f} |")
         
         content.append("")
         return content
@@ -1035,15 +1037,16 @@ class MarketReportGenerator:
         content.append("")
         
         if sell_signals:
-            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 |")
-            content.append("|------|----------|----------|--------|------|")
+            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 | 成交额 |")
+            content.append("|------|----------|----------|--------|------|-------------|")
             
             for i, sector_name in enumerate(sell_signals, 1):
                 sector_data = sector_results.get(sector_name, {})
                 relationship = sector_data.get('latest_relationship', '未知')
                 volume_change = sector_data.get('volume_change_pct', 0)
                 price_change = sector_data.get('price_change_pct', 0)
-                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% |")
+                turnover = sector_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% | {turnover:,.0f} |")
         else:
             content.append("✅ 暂无卖出信号板块")
         
@@ -1061,15 +1064,16 @@ class MarketReportGenerator:
         top_10_signals = neutral_signals[:10]
         
         if top_10_signals:
-            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 |")
-            content.append("|------|----------|----------|--------|------|")
+            content.append("| 排名 | 板块名称 | 量价关系 | 成交量 | 价格 | 成交额 |")
+            content.append("|------|----------|----------|--------|------|-------------|")
             
             for i, sector_name in enumerate(top_10_signals, 1):
                 sector_data = sector_results.get(sector_name, {})
                 relationship = sector_data.get('latest_relationship', '未知')
                 volume_change = sector_data.get('volume_change_pct', 0)
                 price_change = sector_data.get('price_change_pct', 0)
-                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% |")
+                turnover = sector_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {relationship} | {volume_change:.2f}% | {price_change:.2f}% | {turnover:,.0f} |")
         
         content.append("")
         return content
@@ -1105,7 +1109,7 @@ class MarketReportGenerator:
         content.append("")
         return content
     
-    def _build_macd_buy_signals_section(self, buy_signals: list, all_sectors: dict) -> list:
+    def _build_macd_buy_signals_section(self, buy_signals: list, all_sectors: dict, volume_price_analysis: dict = None) -> list:
         """构建MACD分析买入信号板块表格"""
         content = []
         content.append("#### 📈 买入信号板块")
@@ -1114,20 +1118,28 @@ class MarketReportGenerator:
         content.append("")
         
         if buy_signals:
-            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 |")
-            content.append("|------|----------|--------|--------|----------|")
+            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 | 成交额 |")
+            content.append("|------|----------|--------|--------|----------|-------------|")
+            
+            # 从量价分析中获取成交额数据
+            vp_results = {}
+            if volume_price_analysis and volume_price_analysis.get('status') == 'success':
+                vp_results = volume_price_analysis.get('sector_results', {})
             
             for i, sector_name in enumerate(buy_signals, 1):
                 sector_data = all_sectors.get(sector_name, {})
                 macd_value = sector_data.get('latest_macd', 0)
                 histogram = sector_data.get('latest_histogram', 0)
                 strength = sector_data.get('signal_strength', 0)
-                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} |")
+                # 从量价分析结果中获取成交额
+                vp_data = vp_results.get(sector_name, {})
+                turnover = vp_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} | {turnover:,.0f} |")
         
         content.append("")
         return content
     
-    def _build_macd_sell_signals_section(self, sell_signals: list, all_sectors: dict) -> list:
+    def _build_macd_sell_signals_section(self, sell_signals: list, all_sectors: dict, volume_price_analysis: dict = None) -> list:
         """构建MACD分析卖出信号板块表格"""
         content = []
         content.append("#### 📉 卖出信号板块")
@@ -1136,22 +1148,30 @@ class MarketReportGenerator:
         content.append("")
         
         if sell_signals:
-            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 |")
-            content.append("|------|----------|--------|--------|----------|")
+            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 | 成交额 |")
+            content.append("|------|----------|--------|--------|----------|-------------|")
+            
+            # 从量价分析中获取成交额数据
+            vp_results = {}
+            if volume_price_analysis and volume_price_analysis.get('status') == 'success':
+                vp_results = volume_price_analysis.get('sector_results', {})
             
             for i, sector_name in enumerate(sell_signals, 1):
                 sector_data = all_sectors.get(sector_name, {})
                 macd_value = sector_data.get('latest_macd', 0)
                 histogram = sector_data.get('latest_histogram', 0)
                 strength = sector_data.get('signal_strength', 0)
-                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} |")
+                # 从量价分析结果中获取成交额
+                vp_data = vp_results.get(sector_name, {})
+                turnover = vp_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} | {turnover:,.0f} |")
         else:
             content.append("✅ 暂无卖出信号板块")
         
         content.append("")
         return content
     
-    def _build_macd_neutral_signals_section(self, neutral_signals: list, all_sectors: dict) -> list:
+    def _build_macd_neutral_signals_section(self, neutral_signals: list, all_sectors: dict, volume_price_analysis: dict = None) -> list:
         """构建MACD分析中性信号板块表格（TOP10）"""
         content = []
         content.append("#### ➡️ 中性信号板块（TOP10）")
@@ -1162,15 +1182,23 @@ class MarketReportGenerator:
         top_10_signals = neutral_signals[:10]
         
         if top_10_signals:
-            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 |")
-            content.append("|------|----------|--------|--------|----------|")
+            content.append("| 排名 | 板块名称 | MACD值 | 柱状图 | 信号强度 | 成交额 |")
+            content.append("|------|----------|--------|--------|----------|-------------|")
+            
+            # 从量价分析中获取成交额数据
+            vp_results = {}
+            if volume_price_analysis and volume_price_analysis.get('status') == 'success':
+                vp_results = volume_price_analysis.get('sector_results', {})
             
             for i, sector_name in enumerate(top_10_signals, 1):
                 sector_data = all_sectors.get(sector_name, {})
                 macd_value = sector_data.get('latest_macd', 0)
                 histogram = sector_data.get('latest_histogram', 0)
                 strength = sector_data.get('signal_strength', 0)
-                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} |")
+                # 从量价分析结果中获取成交额
+                vp_data = vp_results.get(sector_name, {})
+                turnover = vp_data.get('latest_turnover', 0)
+                content.append(f"| {i} | {sector_name} | {macd_value:.4f} | {histogram:.4f} | {strength:.4f} | {turnover:,.0f} |")
         
         content.append("")
         return content
