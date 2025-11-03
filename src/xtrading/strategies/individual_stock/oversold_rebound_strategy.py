@@ -7,7 +7,7 @@
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any, List
-from ...repositories.stock.stock_query import StockQuery
+from ...repositories.stock_query import StockQuery
 
 class IndividualOversoldReboundStrategy:
     """个股超跌反弹策略类"""

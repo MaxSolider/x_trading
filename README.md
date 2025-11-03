@@ -39,12 +39,35 @@ XTrading 是一个基于 AKShare 数据源的智能股票交易策略分析平�
 - **历史情绪追踪**: 支持市场情绪历史数据记录和分析
 - **情绪数据源**: 整合市场概览、个股突破、融资融券、资金流向等多源数据
 
+### 📰 市场复盘服务
+- **每日市场复盘**: 自动生成每日市场复盘报告
+- **市场总结分析**: 包含市场情绪、关键指标、市场表现概览
+- **板块表现分析**: 分析所有板块的表现，识别强势和弱势板块
+- **个股机会挖掘**: 基于板块信号分析个股投资机会
+- **买入信号追踪**: 记录和追踪历史买入信号，分析信号有效性
+- **Markdown报告**: 自动生成结构化的Markdown格式复盘报告
+- **新闻分析集成**: 整合新闻关键词分析和词云可视化
+
 ### 🎯 明日机会投影服务
 - **智能机会筛选**: 基于板块信号自动筛选有投资机会的行业
 - **个股深度分析**: 对筛选出的板块进行个股级别的详细分析
 - **多策略综合**: 结合板块策略和个股策略提供综合投资建议
 - **投资机会报告**: 自动生成包含具体股票代码和买入理由的详细报告
 - **风险控制**: 支持设置买入信号阈值和每板块最大股票数量
+
+### 📰 新闻分析功能
+- **多渠道新闻聚合**: 整合新浪财经、东方财富等多渠道新闻数据
+- **关键词提取**: 基于jieba分词提取新闻关键词
+- **词频统计**: 统计分析热门关键词出现频次
+- **词云可视化**: 生成新闻关键词词云图，直观展示市场热点
+- **停用词过滤**: 智能过滤无意义停用词，提高分析准确性
+
+### 💾 数据管理功能
+- **MySQL数据库支持**: 使用MySQL存储历史行情数据
+- **数据库自动初始化**: 自动创建数据库和表结构
+- **批量数据加载**: 支持批量加载行业板块和个股历史数据
+- **数据持久化**: 历史数据本地存储，减少API调用
+- **数据更新机制**: 支持增量更新和全量更新数据
 
 ### ⚙️ 策略参数管理
 - **默认参数配置**: 为所有策略提供经过优化的默认参数
@@ -68,8 +91,25 @@ XTrading 是一个基于 AKShare 数据源的智能股票交易策略分析平�
 
 ### 环境要求
 - Python 3.8+
+- MySQL 数据库（用于历史数据存储）
 - 网络连接（用于数据获取）
 - 推荐使用虚拟环境
+
+### 数据库配置
+
+项目使用MySQL存储历史数据，需要先配置数据库连接信息。
+
+编辑 `src/xtrading/data/db.py` 文件，修改数据库连接参数：
+
+```python
+MYSQL_HOST = "127.0.0.1"
+MYSQL_PORT = 3306
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "your_password"  # 修改为你的数据库密码
+DATABASE_NAME = "x_trading"
+```
+
+或者在首次运行时，系统会自动创建数据库和表结构。
 
 ### 安装步骤
 
@@ -141,22 +181,7 @@ backtest.print_backtest_results(results)
 ### 板块信号分析
 
 ```python
-from src.xtrading.services.sector_signal_service import SectorSignalService
 
-# 创建信号服务
-service = SectorSignalService()
-
-# 分析多个板块
-results = service.calculate_sector_signals(
-    sector_list=["半导体", "新能源", "医药"],
-    strategies=["MACD", "RSI"],
-    start_date="20250722",
-    end_date="20251020"
-)
-
-# 生成报告
-report = service.generate_signal_report(results)
-print(report)
 ```
 
 ### 个股策略分析
@@ -199,50 +224,13 @@ backtest.print_backtest_results(results)
 ### 股票信号分析
 
 ```python
-from src.xtrading.services.signal.stock_signal_service import StockSignalService
 
-# 创建股票信号服务
-service = StockSignalService()
-
-# 分析多个股票
-results = service.calculate_stock_signals(
-    stock_list=["000001", "000002", "600000", "600036"],
-    strategies=["TrendTracking", "Breakout", "OversoldRebound"],
-    start_date="20240101",
-    end_date="20241217"
-)
-
-# 生成信号报告
-report_file = service.print_signal_summary(results)
-print(f"报告已生成: {report_file}")
 ```
 
 ### 明日机会投影分析
 
 ```python
-from src.xtrading.services.projection.projection_service import ProjectionService
 
-# 创建投影服务
-projection_service = ProjectionService()
-
-# 分析明日投资机会（使用默认参数）
-results = projection_service.calculate_tomorrow_opportunities()
-
-# 打印汇总信息
-projection_service.print_opportunity_summary(results)
-
-# 生成详细报告
-report_file = projection_service.generate_opportunity_report(results)
-print(f"投资机会报告已生成: {report_file}")
-
-# 自定义参数分析
-custom_results = projection_service.calculate_tomorrow_opportunities(
-    sector_list=["半导体", "新能源", "医药"],
-    sector_strategies=["MACD", "RSI"],
-    stock_strategies=["TrendTracking", "Breakout"],
-    min_buy_signals=2,
-    max_stocks_per_sector=5
-)
 ```
 
 ### 市场情绪分析
@@ -281,6 +269,86 @@ if history_path:
 custom_sentiment = sentiment_strategy.analyze_market_sentiment("20251020")
 ```
 
+### 市场复盘服务
+
+```python
+from src.xtrading.services.review.market_review_service import MarketReviewService
+
+# 创建市场复盘服务实例
+review_service = MarketReviewService()
+
+# 执行市场复盘分析（使用默认日期，即最近交易日）
+review_result = review_service.conduct_market_review()
+
+# 打印复盘结果摘要
+review_service.print_review_summary(review_result)
+
+# 分析指定日期的市场复盘
+custom_review = review_service.conduct_market_review("20251031")
+
+# 查看报告路径
+print(f"复盘报告已生成: {review_result['report_path']}")
+```
+
+### 新闻分析
+
+```python
+from src.xtrading.strategies.market_sentiment.news_analysis_strategy import NewsAnalysisStrategy
+from src.xtrading.utils.graphics.wordcloud_generator import WordCloudGenerator
+from src.xtrading.repositories.news_query import NewsQuery
+
+# 创建新闻分析策略
+news_strategy = NewsAnalysisStrategy()
+
+# 获取新闻数据
+news_query = NewsQuery()
+news_data = news_query.get_news()
+
+# 分析新闻关键词
+keywords_result = news_strategy.analyze_news_keywords(news_data, top_n=50)
+
+# 打印关键词
+print("热门关键词:")
+for item in keywords_result['keywords'][:10]:
+    print(f"  {item['keyword']}: {item['count']}次")
+
+# 生成词云图
+wordcloud_gen = WordCloudGenerator()
+wordcloud_path = wordcloud_gen.generate_wordcloud(
+    word_freq=keywords_result['wordcloud_data'],
+    output_path="reports/images/news/新闻关键词词云_20251031.png",
+    title="新闻关键词词云"
+)
+print(f"词云图已生成: {wordcloud_path}")
+```
+
+### 数据加载服务
+
+```python
+from src.xtrading.data.db import ensure_database_exists
+from src.xtrading.data.schema_init import initialize_database_and_tables
+from src.xtrading.data.data_loader import DataLoader
+
+# 1. 初始化数据库和表结构
+ensure_database_exists()
+initialize_database_and_tables()
+
+# 2. 创建数据加载器
+loader = DataLoader()
+
+# 3. 加载行业板块历史数据（近4个月）
+loader.load_industry_history_last_4m()
+
+# 4. 加载股票历史数据（近4个月）
+loader.load_stock_history_last_4m()
+
+# 5. 加载指定日期范围的数据
+loader.load_industry_history_last_4m(
+    start_date="20240101",
+    end_date="20251031"
+)
+```
+
 ### 策略参数配置
 
 ```python
@@ -312,17 +380,25 @@ start_date, end_date = StockStrategyParams.get_default_date_range()
 XTrading/
 ├── src/xtrading/                    # 核心代码
 │   ├── repositories/               # 数据访问层
-│   │   └── stock/                  # 股票数据查询
-│   │       ├── stock_query.py      # 个股数据查询
-│   │       ├── industry_info_query.py # 行业信息查询
-│   │       ├── market_overview_query.py # 市场概览查询
-│   │       └── concept_info_query.py # 概念信息查询
+│   │   ├── stock_query.py          # 个股数据查询
+│   │   ├── industry_info_query.py  # 行业信息查询
+│   │   ├── market_overview_query.py # 市场概览查询
+│   │   ├── concept_info_query.py   # 概念信息查询
+│   │   ├── news_query.py            # 新闻数据查询
+│   │   └── heat_query.py            # 热度数据查询
+│   ├── data/                       # 数据访问层
+│   │   ├── db.py                   # 数据库连接
+│   │   ├── schema_init.py          # 数据库初始化
+│   │   ├── data_loader.py          # 数据加载器
+│   │   ├── industry_history_dao.py # 行业历史数据DAO
+│   │   └── stock_history_dao.py    # 股票历史数据DAO
 │   ├── strategies/                 # 交易策略
 │   │   ├── industry_sector/        # 行业板块策略
 │   │   │   ├── macd_strategy.py    # MACD策略
 │   │   │   ├── rsi_strategy.py     # RSI策略
 │   │   │   ├── bollinger_bands_strategy.py # 布林带策略
 │   │   │   ├── moving_average_strategy.py # 移动平均策略
+│   │   │   ├── volume_price_strategy.py # 量价关系策略
 │   │   │   └── backtest.py         # 板块回测
 │   │   ├── individual_stock/       # 个股策略
 │   │   │   ├── trend_tracking_strategy.py # 趋势追踪策略
@@ -330,19 +406,21 @@ XTrading/
 │   │   │   ├── oversold_rebound_strategy.py # 超跌反弹策略
 │   │   │   └── backtest.py         # 个股回测
 │   │   └── market_sentiment/       # 市场情绪分析
-│   │       └── market_sentiment_strategy.py # 市场情绪策略
+│   │       ├── market_sentiment_strategy.py # 市场情绪策略
+│   │       └── news_analysis_strategy.py # 新闻分析策略
 │   ├── services/                   # 业务服务层
-│   │   ├── signal/                 # 信号服务
-│   │   │   ├── sector_signal_service.py    # 板块信号服务
-│   │   │   └── stock_signal_service.py     # 股票信号服务
-│   │   └── projection/             # 投影服务
-│   │       └── projection_service.py       # 明日机会投影服务
+│   │   └── review/                 # 复盘服务
+│   │       └── market_review_service.py # 市场复盘服务
 │   ├── utils/                      # 工具类
 │   │   ├── calculator/            # 计算工具
 │   │   ├── docs/                  # 文档生成
+│   │   │   └── market_report_generator.py # 市场报告生成器
 │   │   ├── graphics/              # 图表生成
 │   │   │   ├── chart_generator.py # 图表生成器
-│   │   │   └── radar_chart_generator.py # 雷达图生成器
+│   │   │   ├── radar_chart_generator.py # 雷达图生成器
+│   │   │   └── wordcloud_generator.py # 词云生成器
+│   │   ├── date/                  # 日期工具
+│   │   │   └── date_utils.py      # 日期工具类
 │   │   ├── limiter/               # 限流控制
 │   │   └── pandas/                # pandas配置
 │   └── static/                     # 静态配置
@@ -352,14 +430,21 @@ XTrading/
 ├── reports/                        # 生成的报告
 │   ├── backtest/                   # 回测报告
 │   │   ├── sector/                 # 板块回测报告
-│   │   └── summary/                # 回测总结报告
+│   │   └── summary/                 # 回测总结报告
 │   ├── images/                     # 图表图片
 │   │   ├── sentiment/              # 市场情绪图表
+│   │   ├── news/                   # 新闻词云图
+│   │   ├── sectors/                # 板块分析图表
+│   │   ├── stocks/                 # 个股分析图表
 │   │   └── 20251020/              # 按日期分类的图表
+│   ├── review/                     # 市场复盘报告
+│   │   └── 市场复盘报告_YYYYMMDD.md
 │   ├── sector_signals/             # 板块信号报告
 │   ├── projection/                 # 明日机会投影报告
 │   └── history/                    # 历史数据
-│       └── market_sentiment_history.csv # 市场情绪历史
+│       ├── market_sentiment_history.csv # 市场情绪历史
+│       ├── sectors_history.csv     # 板块历史数据
+│       └── stocks_history.csv      # 股票历史数据
 ├── tests/                          # 测试代码
 │   ├── backtest/                   # 回测测试
 │   ├── repository_test.py          # 数据访问测试
@@ -493,6 +578,16 @@ sentiment_levels = {
 - 融资融券数据
 - 资金流向数据
 - 个股突破数据
+- 新闻资讯数据
+
+### 数据库配置
+
+项目使用MySQL数据库存储历史数据，支持：
+- 行业板块历史行情数据（industry_history_ths表）
+- 个股历史行情数据（stock_history_daily表）
+- 自动创建数据库和表结构
+- 批量数据导入和增量更新
+- 数据持久化，减少API调用频率
 
 ## 📈 报告示例
 
@@ -514,6 +609,14 @@ sentiment_levels = {
 - 情绪等级评估
 - 雷达图可视化
 - 历史情绪对比
+
+### 市场复盘报告
+- 市场总结（情绪分析、关键指标）
+- 板块表现分析（强势/弱势板块）
+- 个股机会分析（买入信号、投资建议）
+- 买入信号历史追踪
+- 新闻关键词分析（词云图）
+- Markdown格式，便于查看和分享
 
 ### 明日机会投影报告
 - 板块机会筛选
@@ -570,11 +673,29 @@ mypy src/
 
 项目主要依赖以下Python包：
 
+### 核心依赖
 - **akshare>=1.17.68** - 金融数据接口
 - **pandas>=1.3.0** - 数据处理和分析
 - **numpy>=1.21.0** - 数值计算
-- **openpyxl>=3.0.0** - Excel文件处理
 - **matplotlib>=3.5.0** - 图表绘制和雷达图生成
+
+### 数据库相关
+- **PyMySQL>=1.1.0** - MySQL数据库连接
+
+### 文本分析
+- **jieba>=0.42.0** - 中文分词
+- **wordcloud>=1.9.0** - 词云图生成
+
+### 其他工具
+- **openpyxl>=3.0.0** - Excel文件处理
+- **pyyaml>=6.0** - YAML配置文件解析
+- **chncal>=1.0.0** - 中国交易日历
+
+### 安装所有依赖
+
+```bash
+pip install -r requirements.txt
+```
 
 ## 📄 许可证
 
@@ -593,6 +714,27 @@ mypy src/
 - 问题反馈: [Issues](https://github.com/xtrading/xtrading/issues)
 - 邮箱: team@xtrading.com
 
+## ⚠️ 注意事项
+
+### 数据库配置
+- 项目需要MySQL数据库支持
+- 首次运行前请确保MySQL服务已启动
+- 修改 `src/xtrading/data/db.py` 中的数据库连接参数
+- 数据库和表会在首次运行时自动创建
+
+### 数据获取限制
+- AKShare数据源有API调用频率限制
+- 项目已实现限流机制，但仍需注意合理使用
+- 建议使用本地数据库存储历史数据，减少API调用
+
+### 依赖安装
+- 某些功能需要额外依赖（如词云需要wordcloud、分词需要jieba）
+- 如遇到导入错误，请检查requirements.txt中是否包含所需依赖
+
+### 交易日历
+- 项目使用chncal库识别交易日
+- 非交易日运行可能会自动切换到最近交易日
+
 ## 🔮 未来计划
 
 ### 已完成功能 ✅
@@ -603,20 +745,27 @@ mypy src/
 - [x] 添加雷达图可视化功能
 - [x] 支持多策略信号服务
 - [x] 完善板块和个股回测系统
+- [x] 实现市场复盘服务（每日复盘报告）
+- [x] 添加MySQL数据库支持（历史数据存储）
+- [x] 实现数据加载服务（批量数据导入）
+- [x] 添加新闻分析功能（关键词提取、词云生成）
+- [x] 实现量价关系策略
+- [x] 添加买入信号历史追踪
 
 ### 计划中功能 🚧
-- [ ] 增加更多技术指标策略
+- [ ] 增加更多技术指标策略（KDJ、CCI、威廉指标等）
 - [ ] 添加机器学习预测模型
 - [ ] 开发 Web 界面
 - [ ] 支持实时数据推送
 - [ ] 增加风险管理模块
 - [ ] 支持多市场数据源
-- [ ] 添加更多技术指标（KDJ、CCI、威廉指标等）
 - [ ] 实现策略组合优化
 - [ ] 添加回测报告可视化增强
 - [ ] 支持期货和期权分析
 - [ ] 添加情绪预警系统
 - [ ] 实现多时间框架分析
+- [ ] 添加数据导出功能（Excel、CSV）
+- [ ] 实现策略回测性能对比优化
 
 ---
 

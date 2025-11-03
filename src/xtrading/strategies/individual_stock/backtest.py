@@ -1,759 +1,372 @@
 """
-个股策略回测框架
-基于个股历史数据进行多种策略的回测验证
+股票回测模块
+基于推荐历史数据进行股票回测验证
 """
 
 import pandas as pd
-import numpy as np
 import os
-from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
-from .trend_tracking_strategy import IndividualTrendTrackingStrategy
-from .breakout_strategy import IndividualBreakoutStrategy
-from .oversold_rebound_strategy import IndividualOversoldReboundStrategy
-from ...repositories.stock.stock_query import StockQuery
-from ...static.stock_strategy_params import StockStrategyParams
-from ...utils.calculator import ReturnCalculator, RiskCalculator, StatisticsCalculator, TradingCalculator
-from ...utils.graphics import ChartGenerator
-from ...utils.docs import SectorReportGenerator
+from typing import Dict, List, Optional, Any
+from ...repositories.stock_query import StockQuery
 
-class IndividualStockBacktest:
-    """个股策略回测验证类"""
+
+class StockBacktest:
+    """股票回测类"""
     
     def __init__(self):
         """初始化回测类"""
         self.stock_query = StockQuery()
-        self.trend_strategy = IndividualTrendTrackingStrategy()
-        self.breakout_strategy = IndividualBreakoutStrategy()
-        self.oversold_strategy = IndividualOversoldReboundStrategy()
-        self.chart_generator = ChartGenerator()
-        self.sector_generator = SectorReportGenerator()
-        
-        print("✅ 个股策略回测框架初始化成功")
+        print("✅ 股票回测模块初始化成功")
     
-    def get_historical_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    def load_recommendations(self, csv_path: str = None, days: int = 30) -> pd.DataFrame:
         """
-        获取个股历史数据
+        从CSV文件中加载最近N天的推荐买入股票列表
         
         Args:
-            symbol: 股票代码
-            start_date: 开始日期 (YYYYMMDD)
-            end_date: 结束日期 (YYYYMMDD)
+            csv_path: CSV文件路径，默认为reports/history/stocks_history.csv
+            days: 获取最近N天的数据，默认30天
             
         Returns:
-            DataFrame: 历史数据
+            DataFrame: 包含股票名称、日期、推荐原因的DataFrame
         """
         try:
-            hist_data = self.stock_query.get_historical_quotes(symbol, start_date, end_date)
-            if hist_data is None or hist_data.empty:
-                print(f"❌ 无法获取 {symbol} 的历史数据")
-                return None
+            if csv_path is None:
+                # 获取项目根目录
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+                csv_path = os.path.join(project_root, 'reports', 'history', 'stocks_history.csv')
             
-            print(f"✅ 成功获取 {symbol} 历史数据 ({len(hist_data)} 条记录)")
-            return hist_data
+            if not os.path.exists(csv_path):
+                print(f"❌ CSV文件不存在: {csv_path}")
+                return pd.DataFrame()
             
-        except Exception as e:
-            print(f"❌ 获取 {symbol} 历史数据失败: {e}")
-            return None
-    
-    def calculate_strategy_signals(self, data: pd.DataFrame, strategy_name: str, **kwargs) -> Optional[pd.DataFrame]:
-        """
-        计算策略交易信号
-        
-        Args:
-            data: 历史数据
-            strategy_name: 策略名称
-            **kwargs: 策略参数（可选，如果不提供则使用默认参数）
+            # 读取CSV文件
+            df = pd.read_csv(csv_path)
             
-        Returns:
-            DataFrame: 包含交易信号的DataFrame
-        """
-        try:
-            # 获取策略参数
-            strategy_params = StockStrategyParams.get_strategy_params(strategy_name)
-            
-            if strategy_name == "TrendTracking":
-                # 提取移动平均线参数
-                ma_params = {
-                    'short_period': kwargs.get('short_period', strategy_params.get('short_period', 5)),
-                    'medium_period': kwargs.get('medium_period', strategy_params.get('medium_period', 20)),
-                    'long_period': kwargs.get('long_period', strategy_params.get('long_period', 60))
-                }
+            # 确保日期列为字符串格式
+            if '日期' in df.columns:
+                df['日期'] = df['日期'].astype(str)
                 
-                # 提取MACD参数
-                macd_params = {
-                    'fast_period': kwargs.get('fast_period', strategy_params.get('fast_period', 12)),
-                    'slow_period': kwargs.get('slow_period', strategy_params.get('slow_period', 26)),
-                    'signal_period': kwargs.get('signal_period', strategy_params.get('signal_period', 9))
-                }
+                # 获取最近N天的数据
+                today = datetime.now()
+                cutoff_date = (today - timedelta(days=days)).strftime('%Y%m%d')
                 
-                # 计算移动平均线
-                ma_data = self.trend_strategy.calculate_moving_averages(data, **ma_params)
-                if ma_data is None:
-                    return None
+                # 过滤日期
+                df = df[df['日期'] >= cutoff_date]
                 
-                # 计算MACD指标
-                macd_data = self.trend_strategy.calculate_macd(ma_data, **macd_params)
-                if macd_data is None:
-                    return None
-                
-                # 生成交易信号
-                return self.trend_strategy.generate_trend_signals(macd_data)
-                
-            elif strategy_name == "Breakout":
-                # 提取布林带参数
-                bb_params = {
-                    'period': kwargs.get('period', strategy_params.get('period', 20)),
-                    'std_dev': kwargs.get('std_dev', strategy_params.get('std_dev', 2.0))
-                }
-                
-                # 提取量比参数
-                volume_params = {
-                    'period': kwargs.get('volume_period', strategy_params.get('volume_period', 5))
-                }
-                
-                # 提取阻力位参数
-                resistance_params = {
-                    'lookback_period': kwargs.get('resistance_lookback_period', strategy_params.get('resistance_lookback_period', 60))
-                }
-                
-                # 提取突破信号参数
-                signal_params = {
-                    'volume_threshold': kwargs.get('volume_threshold', strategy_params.get('volume_threshold', 1.2))
-                }
-                
-                # 计算布林带指标
-                bb_data = self.breakout_strategy.calculate_bollinger_bands(data, **bb_params)
-                if bb_data is None:
-                    return None
-                
-                # 计算量比指标
-                volume_data = self.breakout_strategy.calculate_volume_ratio(bb_data, **volume_params)
-                if volume_data is None:
-                    return None
-                
-                # 计算阻力位
-                resistance_data = self.breakout_strategy.calculate_resistance_levels(volume_data, **resistance_params)
-                if resistance_data is None:
-                    return None
-                
-                # 生成交易信号
-                return self.breakout_strategy.generate_breakout_signals(resistance_data, **signal_params)
-                
-            elif strategy_name == "OversoldRebound":
-                # 提取KDJ参数
-                kdj_params = {
-                    'k_period': kwargs.get('k_period', strategy_params.get('k_period', 9)),
-                    'd_period': kwargs.get('d_period', strategy_params.get('d_period', 3)),
-                    'j_period': kwargs.get('j_period', strategy_params.get('j_period', 3))
-                }
-                
-                # 提取RSI参数
-                rsi_params = {
-                    'period': kwargs.get('rsi_period', strategy_params.get('rsi_period', 14))
-                }
-                
-                # 提取价格跌幅参数
-                decline_params = {
-                    'period': kwargs.get('decline_period', strategy_params.get('decline_period', 20))
-                }
-                
-                # 提取超卖信号参数
-                signal_params = {
-                    'kdj_oversold': kwargs.get('kdj_oversold', strategy_params.get('kdj_oversold', 20)),
-                    'rsi_oversold': kwargs.get('rsi_oversold', strategy_params.get('rsi_oversold', 30)),
-                    'decline_threshold': kwargs.get('decline_threshold', strategy_params.get('decline_threshold', 15))
-                }
-                
-                # 计算KDJ指标
-                kdj_data = self.oversold_strategy.calculate_kdj(data, **kdj_params)
-                if kdj_data is None:
-                    return None
-                
-                # 计算RSI指标
-                rsi_data = self.oversold_strategy.calculate_rsi(kdj_data, **rsi_params)
-                if rsi_data is None:
-                    return None
-                
-                # 计算价格跌幅
-                decline_data = self.oversold_strategy.calculate_price_decline(rsi_data, **decline_params)
-                if decline_data is None:
-                    return None
-                
-                # 生成交易信号
-                return self.oversold_strategy.generate_oversold_signals(decline_data, **signal_params)
-                
+                print(f"✅ 成功加载 {len(df)} 条推荐记录（最近{days}天）")
+                return df
             else:
-                print(f"❌ 不支持的策略: {strategy_name}")
-                return None
+                print(f"❌ CSV文件中未找到'日期'列")
+                return pd.DataFrame()
                 
         except Exception as e:
-            print(f"❌ 计算 {strategy_name} 策略信号失败: {e}")
-            return None
+            print(f"❌ 加载推荐列表失败: {e}")
+            return pd.DataFrame()
     
-    def simulate_trading(self, signal_data: pd.DataFrame, initial_capital: float = 100000) -> Dict[str, Any]:
+    def _get_stock_code_map(self, stock_names: List[str]) -> Dict[str, str]:
         """
-        模拟交易过程
+        构建股票名称到代码的映射
         
         Args:
-            signal_data: 包含交易信号的DataFrame
-            initial_capital: 初始资金
+            stock_names: 股票名称列表
             
         Returns:
-            Dict: 交易结果统计
+            Dict: {股票名称: 股票代码}
         """
-        if signal_data is None or signal_data.empty:
-            return None
-        
-        # 确保有收盘价列
-        close_col = None
-        for col in ['收盘', '收盘价', 'close', 'Close']:
-            if col in signal_data.columns:
-                close_col = col
-                break
-        
-        if close_col is None:
-            print("❌ 未找到收盘价列")
-            return None
-        
-        # 初始化交易状态
-        capital = initial_capital
-        position = 0  # 持仓数量
-        trades = []  # 交易记录
-        portfolio_values = []  # 组合价值记录
-        
-        # 遍历每个交易日
-        for i, row in signal_data.iterrows():
-            current_price = row[close_col]
-            signal = row.get('Signal', 0)
-            signal_type = row.get('Signal_Type', 'HOLD')
-            date = row.get('日期', f'Day_{i}')
+        try:
+            # 获取所有股票列表
+            stocks_df = self.stock_query.get_all_stock()
+            if stocks_df is None or stocks_df.empty:
+                print("⚠️ 获取股票列表失败")
+                return {}
             
-            # 计算当前组合价值
-            current_value = capital + (position * current_price)
-            portfolio_values.append({
-                'date': date,
-                'price': current_price,
-                'capital': capital,
-                'position': position,
-                'portfolio_value': current_value,
-                'signal': signal,
-                'signal_type': signal_type
-            })
+            # 查找代码列和名称列
+            code_col = None
+            name_col = None
             
-            # 执行交易
-            if signal == 1:  # 买入信号
-                if capital > 0:
-                    # 全仓买入
-                    shares_to_buy = capital // current_price
-                    if shares_to_buy > 0:
-                        cost = shares_to_buy * current_price
-                        capital -= cost
-                        position += shares_to_buy
-                        trades.append({
-                            'date': date,
-                            'action': 'BUY',
-                            'price': current_price,
-                            'shares': shares_to_buy,
-                            'amount': cost,
-                            'capital_after': capital,
-                            'position_after': position
-                        })
+            for col in stocks_df.columns:
+                col_lower = col.lower()
+                if col_lower in ('code', '代码', 'symbol'):
+                    code_col = col
+                elif col_lower in ('name', '名称'):
+                    name_col = col
             
-            elif signal == -1:  # 卖出信号
-                if position > 0:
-                    # 全仓卖出
-                    proceeds = position * current_price
-                    capital += proceeds
-                    trades.append({
-                        'date': date,
-                        'action': 'SELL',
-                        'price': current_price,
-                        'shares': position,
-                        'amount': proceeds,
-                        'capital_after': capital,
-                        'position_after': 0
-                    })
-                    position = 0
+            if code_col is None or name_col is None:
+                # 如果找不到标准列名，尝试使用前两列
+                if len(stocks_df.columns) >= 2:
+                    code_col = stocks_df.columns[0]
+                    name_col = stocks_df.columns[1]
+                else:
+                    print("⚠️ 无法识别股票列表的列结构")
+                    return {}
             
-            elif signal == 2:  # 强势买入
-                if capital > 0:
-                    shares_to_buy = capital // current_price
-                    if shares_to_buy > 0:
-                        cost = shares_to_buy * current_price
-                        capital -= cost
-                        position += shares_to_buy
-                        trades.append({
-                            'date': date,
-                            'action': 'STRONG_BUY',
-                            'price': current_price,
-                            'shares': shares_to_buy,
-                            'amount': cost,
-                            'capital_after': capital,
-                            'position_after': position
-                        })
+            # 构建映射字典
+            stock_map = {}
+            for _, row in stocks_df.iterrows():
+                stock_code = str(row[code_col]).strip() if pd.notna(row[code_col]) else None
+                stock_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else None
+                
+                if stock_code and stock_name:
+                    stock_map[stock_name] = stock_code
             
-            elif signal == -2:  # 强势卖出
-                if position > 0:
-                    proceeds = position * current_price
-                    capital += proceeds
-                    trades.append({
-                        'date': date,
-                        'action': 'STRONG_SELL',
-                        'price': current_price,
-                        'shares': position,
-                        'amount': proceeds,
-                        'capital_after': capital,
-                        'position_after': 0
-                    })
-                    position = 0
-        
-        # 计算最终结果
-        final_price = signal_data.iloc[-1][close_col]
-        final_value = TradingCalculator.calculate_portfolio_value(capital, position, final_price)
-        
-        # 计算统计指标
-        portfolio_df = pd.DataFrame(portfolio_values)
-        portfolio_values_list = portfolio_df['portfolio_value'].tolist()
-        
-        # 计算组合日收益率
-        portfolio_returns = ReturnCalculator.calculate_daily_returns(portfolio_df['portfolio_value'])
-        
-        total_return = ReturnCalculator.calculate_total_return(initial_capital, final_value)
-        annualized_return = ReturnCalculator.calculate_annualized_return(total_return, len(signal_data))
-        volatility = RiskCalculator.calculate_volatility(portfolio_returns)
-        sharpe_ratio = RiskCalculator.calculate_sharpe_ratio(portfolio_returns)
-        max_drawdown = RiskCalculator.calculate_max_drawdown(portfolio_df['portfolio_value'])
-        
-        return {
-            'initial_capital': initial_capital,
-            'final_value': final_value,
-            'total_return': total_return,
-            'annualized_return': annualized_return,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'total_trades': len(trades),
-            'buy_trades': len([t for t in trades if t['action'] in ['BUY', 'STRONG_BUY']]),
-            'sell_trades': len([t for t in trades if t['action'] in ['SELL', 'STRONG_SELL']]),
-            'trades': trades,
-            'portfolio_values': portfolio_values
-        }
+            # 过滤只包含需要的股票
+            filtered_map = {name: stock_map[name] for name in stock_names if name in stock_map}
+            
+            print(f"✅ 成功构建股票代码映射，共 {len(filtered_map)}/{len(stock_names)} 条匹配")
+            return filtered_map
+            
+        except Exception as e:
+            print(f"❌ 构建股票代码映射失败: {e}")
+            return {}
     
-    def backtest_strategy(self, symbol: str, strategy_name: str, 
-                         start_date: str, end_date: str, initial_capital: float = 100000,
-                         **strategy_params) -> Optional[Dict[str, Any]]:
+    def backtest_stock(self, stock_name: str, recommend_date: str, end_date: str = None, stock_code_map: Dict[str, str] = None) -> Dict[str, Any]:
         """
-        回测单个策略
+        回测单个股票
         
         Args:
-            symbol: 股票代码
-            strategy_name: 策略名称
-            start_date: 开始日期
-            end_date: 结束日期
-            initial_capital: 初始资金
-            **strategy_params: 策略参数
+            stock_name: 股票名称
+            recommend_date: 推荐买入日期（格式：YYYYMMDD）
+            end_date: 结束日期，默认为今日（格式：YYYYMMDD）
+            stock_code_map: 股票名称到代码的映射字典，可选
             
         Returns:
-            Dict: 回测结果
+            Dict: 回测结果，包含各种涨跌幅指标
         """
-        print(f"🔍 开始回测 {symbol} 的 {strategy_name} 策略...")
-        
-        # 获取历史数据
-        hist_data = self.get_historical_data(symbol, start_date, end_date)
-        if hist_data is None:
-            return None
-        
-        # 计算策略信号
-        signal_data = self.calculate_strategy_signals(hist_data, strategy_name, **strategy_params)
-        if signal_data is None:
-            return None
-        
-        # 模拟交易
-        trading_result = self.simulate_trading(signal_data, initial_capital)
-        if trading_result is None:
-            return None
-        
-        # 添加策略信息和历史数据
-        trading_result.update({
-            'symbol': symbol,
-            'strategy_name': strategy_name,
-            'start_date': start_date,
-            'end_date': end_date,
-            'strategy_params': strategy_params,
-            'data_points': len(hist_data),
-            'historical_data': hist_data  # 保存历史数据，避免重复调用
-        })
-        
-        print(f"✅ {symbol} {strategy_name} 策略回测完成")
-        return trading_result
-    
-    def compare_strategies(self, symbol: str, strategies: List[str], 
-                         start_date: str, end_date: str, initial_capital: float = 100000,
-                         **strategy_params) -> List[Dict[str, Any]]:
-        """
-        比较多个策略的表现
-        
-        Args:
-            symbol: 股票代码
-            strategies: 策略名称列表
-            start_date: 开始日期
-            end_date: 结束日期
-            initial_capital: 初始资金
-            **strategy_params: 策略参数
+        try:
+            if end_date is None:
+                end_date = datetime.now().strftime('%Y%m%d')
             
-        Returns:
-            List[Dict]: 各策略回测结果列表
-        """
-        results = []
-        
-        print(f"🔍 开始比较 {symbol} 的 {len(strategies)} 个策略...")
-        
-        for strategy in strategies:
-            result = self.backtest_strategy(symbol, strategy, start_date, end_date, 
-                                          initial_capital, **strategy_params)
-            if result:
-                results.append(result)
-        
-        # 按总收益率排序
-        results.sort(key=lambda x: x['total_return'], reverse=True)
-        
-        print(f"✅ {symbol} 策略比较完成")
-        return results
-    
-    def _calculate_stock_performance(self, results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        计算股票表现数据
-        
-        Args:
-            results: 回测结果列表
+            # 获取股票代码
+            stock_code = None
+            if stock_code_map and stock_name in stock_code_map:
+                stock_code = stock_code_map[stock_name]
+            else:
+                # 如果映射中没有，尝试直接搜索
+                stock_code = self.stock_query.search_stock_by_name(stock_name)
             
-        Returns:
-            Dict[str, Any]: 股票表现数据
-        """
-        if not results:
-            return None
-        
-        first_result = results[0]
-        hist_data = first_result.get('historical_data')
-        
-        if hist_data is None or hist_data.empty:
-            return None
-        
-        # 找到收盘价列
-        close_col = None
-        for col in ['收盘', '收盘价', 'close', 'Close']:
-            if col in hist_data.columns:
-                close_col = col
-                break
-        
-        if close_col is None:
-            return None
-        
-        # 计算股票买入并持有的表现
-        stock_total_return = ReturnCalculator.calculate_sector_return(hist_data[close_col])
-        
-        # 计算股票年化收益率
-        data_points = len(hist_data)
-        stock_annualized_return = ReturnCalculator.calculate_annualized_return(stock_total_return, data_points)
-        
-        # 计算股票波动率
-        stock_returns = ReturnCalculator.calculate_daily_returns(hist_data[close_col])
-        stock_volatility = RiskCalculator.calculate_volatility(stock_returns)
-        
-        # 计算股票夏普比率
-        stock_sharpe_ratio = RiskCalculator.calculate_sharpe_ratio(stock_returns)
-        
-        # 计算股票最大回撤
-        stock_max_drawdown = RiskCalculator.calculate_max_drawdown(hist_data[close_col])
-        
-        # 计算初始和最终价值（假设初始资金100000）
-        initial_capital = 100000
-        final_value = initial_capital * (1 + stock_total_return)
-        
-        return {
-            'initial_capital': initial_capital,
-            'final_value': final_value,
-            'total_return': stock_total_return,
-            'annualized_return': stock_annualized_return,
-            'volatility': stock_volatility,
-            'sharpe_ratio': stock_sharpe_ratio,
-            'max_drawdown': stock_max_drawdown,
-            'data_points': data_points
-        }
-    
-    def _calculate_stock_returns(self, results: List[Dict[str, Any]]) -> Tuple[List[float], List[float]]:
-        """
-        计算股票收益率数据
-        
-        Args:
-            results: 回测结果列表
+            if stock_code is None:
+                return {
+                    'stock_name': stock_name,
+                    'recommend_date': recommend_date,
+                    'status': 'error',
+                    'error': f'无法找到股票代码: {stock_name}'
+                }
             
-        Returns:
-            Tuple[List[float], List[float]]: (日收益率序列, 累计收益率序列)
-        """
-        if not results:
-            return [], []
-        
-        first_result = results[0]
-        hist_data = first_result.get('historical_data')
-        
-        if hist_data is None or hist_data.empty:
-            return [], []
-        
-        # 找到收盘价列
-        close_col = None
-        for col in ['收盘', '收盘价', 'close', 'Close']:
-            if col in hist_data.columns:
-                close_col = col
-                break
-        
-        if close_col is None:
-            return [], []
-        
-        # 计算股票日收益率和累计收益率
-        daily_returns = ReturnCalculator.calculate_daily_returns(hist_data[close_col])
-        cumulative_returns = ReturnCalculator.calculate_cumulative_returns(hist_data[close_col])
-        
-        return daily_returns.tolist(), cumulative_returns.tolist()
-    
-    def _calculate_strategy_returns(self, results: List[Dict[str, Any]]) -> None:
-        """
-        计算策略收益率数据并添加到结果中
-        
-        Args:
-            results: 回测结果列表
-        """
-        for result in results:
-            portfolio_values = result.get('portfolio_values', [])
-            initial_capital = result.get('initial_capital', 100000)
-            
-            if not portfolio_values:
-                result['daily_returns'] = []
-                result['cumulative_returns'] = []
-                result['trade_statistics'] = TradingCalculator.calculate_trade_statistics([])
-                continue
-            
-            # 计算日收益率
-            portfolio_values_list = [pv['portfolio_value'] for pv in portfolio_values]
-            daily_returns = TradingCalculator.calculate_portfolio_daily_returns(portfolio_values_list)
-            
-            # 计算累计收益率
-            cumulative_returns = []
-            for i, pv in enumerate(portfolio_values):
-                cumulative_return = ReturnCalculator.calculate_strategy_cumulative_return(
-                    portfolio_values, i, initial_capital
-                )
-                cumulative_returns.append(cumulative_return)
-            
-            # 计算交易统计
-            trades = result.get('trades', [])
-            trade_stats = TradingCalculator.calculate_trade_statistics(trades)
-            trade_stats['trading_frequency'] = TradingCalculator.calculate_trading_frequency(
-                trade_stats['total_trades'], result.get('data_points', 0)
+            # 获取股票日频数据
+            hist_data = self.stock_query.get_historical_quotes(
+                symbol=stock_code,
+                start_date=recommend_date,
+                end_date=end_date,
+                use_db=True
             )
             
-            # 添加到结果中
-            result['daily_returns'] = daily_returns
-            result['cumulative_returns'] = cumulative_returns
-            result['trade_statistics'] = trade_stats
-    
-    def print_backtest_results(self, results: List[Dict[str, Any]]):
-        """
-        打印回测结果
-        
-        Args:
-            results: 回测结果列表
-        """
-        if not results:
-            print("❌ 无回测结果可显示")
-            return
-        
-        # 创建回测结果目录
-        backtest_date = datetime.now().strftime('%Y%m%d')
-        symbol = results[0].get('symbol', 'Unknown')
-        
-        # 创建目录
-        reports_dir = f"reports/backtest/{backtest_date}/individual"
-        images_dir = f"reports/images/{backtest_date}"
-        os.makedirs(reports_dir, exist_ok=True)
-        os.makedirs(images_dir, exist_ok=True)
-        
-        # 生成时间戳
-        timestamp = datetime.now().strftime('%H%M%S')
-        
-        # 计算股票表现数据
-        stock_performance = self._calculate_stock_performance(results)
-        
-        # 计算股票收益率数据
-        stock_daily_returns, stock_cumulative_returns = self._calculate_stock_returns(results)
-        
-        # 计算策略收益率数据
-        self._calculate_strategy_returns(results)
-        
-        # 打印结果摘要
-        print("=" * 80)
-        print(f"📊 {symbol} 个股策略回测结果")
-        print("=" * 80)
-        
-        if stock_performance:
-            print(f"\n📈 股票买入并持有表现:")
-            print(f"  初始资金: {stock_performance['initial_capital']:,.2f}")
-            print(f"  最终价值: {stock_performance['final_value']:,.2f}")
-            print(f"  总收益率: {stock_performance['total_return']:.2%}")
-            print(f"  年化收益率: {stock_performance['annualized_return']:.2%}")
-            print(f"  波动率: {stock_performance['volatility']:.2%}")
-            print(f"  夏普比率: {stock_performance['sharpe_ratio']:.2f}")
-            print(f"  最大回撤: {stock_performance['max_drawdown']:.2%}")
-        
-        print(f"\n📊 策略表现对比:")
-        print(f"{'策略名称':<15} {'总收益率':<10} {'年化收益率':<12} {'夏普比率':<10} {'最大回撤':<10} {'交易次数':<8}")
-        print("-" * 80)
-        
-        for result in results:
-            print(f"{result['strategy_name']:<15} "
-                  f"{result['total_return']:<10.2%} "
-                  f"{result['annualized_return']:<12.2%} "
-                  f"{result['sharpe_ratio']:<10.2f} "
-                  f"{result['max_drawdown']:<10.2%} "
-                  f"{result['total_trades']:<8}")
-        
-        # 生成详细报告
-        self._generate_detailed_report(results, reports_dir, symbol, timestamp, 
-                                     stock_performance, stock_daily_returns, stock_cumulative_returns)
-        
-        # 生成图表
-        self._generate_charts(results, images_dir, symbol, timestamp, 
-                            stock_daily_returns, stock_cumulative_returns)
-        
-        print("=" * 80)
-    
-    def _generate_detailed_report(self, results: List[Dict[str, Any]], reports_dir: str, 
-                                 symbol: str, timestamp: str, stock_performance: Dict[str, Any],
-                                 stock_daily_returns: List[float], stock_cumulative_returns: List[float]):
-        """
-        生成详细回测报告
-        
-        Args:
-            results: 回测结果列表
-            reports_dir: 报告目录
-            symbol: 股票代码
-            timestamp: 时间戳
-            stock_performance: 股票表现数据
-            stock_daily_returns: 股票日收益率
-            stock_cumulative_returns: 股票累计收益率
-        """
-        try:
-            report_file = f"{reports_dir}/{symbol}_个股策略回测报告_{timestamp}.md"
+            if hist_data is None or hist_data.empty:
+                return {
+                    'stock_name': stock_name,
+                    'stock_code': stock_code,
+                    'recommend_date': recommend_date,
+                    'status': 'error',
+                    'error': '无法获取历史数据'
+                }
             
-            with open(report_file, 'w', encoding='utf-8') as f:
-                f.write(f"# {symbol} 个股策略回测报告\n\n")
-                f.write(f"**回测时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"**股票代码**: {symbol}\n")
-                f.write(f"**回测期间**: {results[0]['start_date']} - {results[0]['end_date']}\n\n")
-                
-                # 股票表现
-                if stock_performance:
-                    f.write("## 股票买入并持有表现\n\n")
-                    f.write(f"- **初始资金**: {stock_performance['initial_capital']:,.2f} 元\n")
-                    f.write(f"- **最终价值**: {stock_performance['final_value']:,.2f} 元\n")
-                    f.write(f"- **总收益率**: {stock_performance['total_return']:.2%}\n")
-                    f.write(f"- **年化收益率**: {stock_performance['annualized_return']:.2%}\n")
-                    f.write(f"- **波动率**: {stock_performance['volatility']:.2%}\n")
-                    f.write(f"- **夏普比率**: {stock_performance['sharpe_ratio']:.2f}\n")
-                    f.write(f"- **最大回撤**: {stock_performance['max_drawdown']:.2%}\n\n")
-                
-                # 策略对比
-                f.write("## 策略表现对比\n\n")
-                f.write("| 策略名称 | 总收益率 | 年化收益率 | 夏普比率 | 最大回撤 | 交易次数 |\n")
-                f.write("|---------|---------|-----------|---------|---------|---------|\n")
-                
-                for result in results:
-                    f.write(f"| {result['strategy_name']} | "
-                           f"{result['total_return']:.2%} | "
-                           f"{result['annualized_return']:.2%} | "
-                           f"{result['sharpe_ratio']:.2f} | "
-                           f"{result['max_drawdown']:.2%} | "
-                           f"{result['total_trades']} |\n")
-                
-                f.write("\n")
-                
-                # 详细策略分析
-                for i, result in enumerate(results, 1):
-                    f.write(f"## {i}. {result['strategy_name']} 策略详细分析\n\n")
-                    f.write(f"### 策略参数\n")
-                    for key, value in result['strategy_params'].items():
-                        f.write(f"- **{key}**: {value}\n")
-                    f.write("\n")
-                    
-                    f.write(f"### 交易统计\n")
-                    f.write(f"- **买入交易**: {result['buy_trades']} 次\n")
-                    f.write(f"- **卖出交易**: {result['sell_trades']} 次\n")
-                    f.write(f"- **总交易次数**: {result['total_trades']} 次\n")
-                    f.write(f"- **交易频率**: {result['trade_statistics'].get('trading_frequency', 0):.2f} 次/月\n\n")
-                    
-                    # 最近交易记录
-                    if result['trades']:
-                        f.write(f"### 最近交易记录\n\n")
-                        f.write("| 日期 | 操作 | 价格 | 数量 | 金额 |\n")
-                        f.write("|------|------|------|------|------|\n")
-                        
-                        for trade in result['trades'][-10:]:  # 显示最近10笔交易
-                            f.write(f"| {trade['date']} | {trade['action']} | "
-                                   f"{trade['price']:.2f} | {trade['shares']} | "
-                                   f"{trade['amount']:.2f} |\n")
-                        f.write("\n")
+            # 确保日期列为字符串格式，并按日期排序
+            if '日期' in hist_data.columns:
+                hist_data['日期'] = hist_data['日期'].astype(str)
+            elif 'date' in hist_data.columns:
+                hist_data['日期'] = hist_data['date'].astype(str)
             
-            print(f"✅ 详细回测报告已生成: {report_file}")
+            hist_data = hist_data.sort_values('日期').reset_index(drop=True)
+            
+            # 获取推荐日期的收盘价
+            recommend_data = hist_data[hist_data['日期'] == recommend_date]
+            if recommend_data.empty:
+                # 如果没有推荐日期的数据，使用最近的数据
+                recommend_data = hist_data.head(1)
+                if recommend_data.empty:
+                    return {
+                        'stock_name': stock_name,
+                        'stock_code': stock_code,
+                        'recommend_date': recommend_date,
+                        'status': 'error',
+                        'error': '推荐日期无数据'
+                    }
+                actual_recommend_date = recommend_data.iloc[0]['日期']
+            else:
+                actual_recommend_date = recommend_date
+            
+            # 获取收盘价列名
+            close_col = None
+            for col in ['收盘', 'close', '最新价']:
+                if col in hist_data.columns:
+                    close_col = col
+                    break
+            
+            if close_col is None:
+                return {
+                    'stock_name': stock_name,
+                    'stock_code': stock_code,
+                    'recommend_date': recommend_date,
+                    'status': 'error',
+                    'error': '无法找到收盘价列'
+                }
+            
+            recommend_price = float(recommend_data.iloc[0][close_col])
+            
+            # 计算各种涨跌幅
+            results = {
+                'stock_name': stock_name,
+                'stock_code': stock_code,
+                'recommend_date': recommend_date,
+                'actual_recommend_date': actual_recommend_date,
+                'recommend_price': recommend_price,
+                'status': 'success'
+            }
+            
+            # 获取后续交易日的索引
+            recommend_idx = hist_data[hist_data['日期'] == actual_recommend_date].index
+            if len(recommend_idx) == 0:
+                return {
+                    'stock_name': stock_name,
+                    'stock_code': stock_code,
+                    'recommend_date': recommend_date,
+                    'status': 'error',
+                    'error': '无法找到推荐日期在数据中的位置'
+                }
+            
+            recommend_idx = recommend_idx[0]
+            total_days = len(hist_data) - recommend_idx - 1
+            
+            # 1. 次日涨跌幅
+            if recommend_idx + 1 < len(hist_data):
+                next_day_data = hist_data.iloc[recommend_idx + 1]
+                next_day_price = float(next_day_data[close_col])
+                next_day_return = ((next_day_price - recommend_price) / recommend_price) * 100
+                results['next_day_return'] = round(next_day_return, 2)
+                results['next_day_date'] = next_day_data['日期']
+            else:
+                results['next_day_return'] = None
+                results['next_day_date'] = None
+            
+            # 2. 2日累计涨跌幅
+            if recommend_idx + 2 < len(hist_data):
+                day2_data = hist_data.iloc[recommend_idx + 2]
+                day2_price = float(day2_data[close_col])
+                day2_return = ((day2_price - recommend_price) / recommend_price) * 100
+                results['day2_return'] = round(day2_return, 2)
+                results['day2_date'] = day2_data['日期']
+            else:
+                results['day2_return'] = None
+                results['day2_date'] = None
+            
+            # 3. 5日累计涨跌幅
+            if recommend_idx + 5 < len(hist_data):
+                day5_data = hist_data.iloc[recommend_idx + 5]
+                day5_price = float(day5_data[close_col])
+                day5_return = ((day5_price - recommend_price) / recommend_price) * 100
+                results['day5_return'] = round(day5_return, 2)
+                results['day5_date'] = day5_data['日期']
+            else:
+                results['day5_return'] = None
+                results['day5_date'] = None
+            
+            # 4. 至今累计涨跌幅
+            if recommend_idx + 1 < len(hist_data):
+                last_data = hist_data.iloc[-1]
+                last_price = float(last_data[close_col])
+                total_return = ((last_price - recommend_price) / recommend_price) * 100
+                results['total_return'] = round(total_return, 2)
+                results['total_days'] = total_days
+                results['end_date'] = last_data['日期']
+            else:
+                results['total_return'] = None
+                results['total_days'] = 0
+                results['end_date'] = None
+            
+            # 5. 最高累计涨跌幅（遍历所有日期，计算累计涨跌幅，找最大值）
+            if recommend_idx + 1 < len(hist_data):
+                max_return = None
+                max_return_date = None
+                max_idx = None
+                
+                # 遍历推荐日期之后的所有日期，计算累计涨跌幅
+                for i in range(recommend_idx + 1, len(hist_data)):
+                    current_price = float(hist_data.iloc[i][close_col])
+                    current_return = ((current_price - recommend_price) / recommend_price) * 100
+                    
+                    # 记录累计涨跌幅最大的日期
+                    if max_return is None or current_return > max_return:
+                        max_return = current_return
+                        max_return_date = hist_data.iloc[i]['日期']
+                        max_idx = i
+                
+                if max_return is not None:
+                    results['max_return'] = round(max_return, 2)
+                    results['max_return_date'] = max_return_date
+                else:
+                    results['max_return'] = None
+                    results['max_return_date'] = None
+            else:
+                results['max_return'] = None
+                results['max_return_date'] = None
+            
+            return results
             
         except Exception as e:
-            print(f"❌ 生成详细回测报告失败: {e}")
+            print(f"❌ 回测股票 {stock_name} 失败: {e}")
+            return {
+                'stock_name': stock_name,
+                'recommend_date': recommend_date,
+                'status': 'error',
+                'error': str(e)
+            }
     
-    def _generate_charts(self, results: List[Dict[str, Any]], images_dir: str, symbol: str, 
-                        timestamp: str, stock_daily_returns: List[float], stock_cumulative_returns: List[float]):
+    def backtest_all(self, days: int = 30, csv_path: str = None) -> List[Dict[str, Any]]:
         """
-        生成回测图表
+        回测所有推荐股票
         
         Args:
-            results: 回测结果列表
-            images_dir: 图片目录
-            symbol: 股票代码
-            timestamp: 时间戳
-            stock_daily_returns: 股票日收益率
-            stock_cumulative_returns: 股票累计收益率
-        """
-        try:
-            # 这里可以调用图表生成器生成各种图表
-            # 由于图表生成器可能需要特定的数据格式，这里先预留接口
-            print(f"✅ 图表生成功能待实现")
-            
-        except Exception as e:
-            print(f"❌ 生成图表失败: {e}")
-    
-    def analyze_multiple_stocks(self, symbols: List[str], strategies: List[str], 
-                              start_date: str, end_date: str, initial_capital: float = 100000) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        分析多个股票的多种策略
-        
-        Args:
-            symbols: 股票代码列表
-            strategies: 策略名称列表
-            start_date: 开始日期
-            end_date: 结束日期
-            initial_capital: 初始资金
+            days: 获取最近N天的推荐数据，默认30天
+            csv_path: CSV文件路径
             
         Returns:
-            Dict[str, List[Dict]]: 按股票分组的回测结果
+            List[Dict]: 所有股票的回测结果列表
         """
-        all_results = {}
-        
-        print(f"🔍 开始分析 {len(symbols)} 个股票的 {len(strategies)} 种策略...")
-        
-        for symbol in symbols:
-            print(f"\n📊 分析股票: {symbol}")
-            results = self.compare_strategies(symbol, strategies, start_date, end_date, initial_capital)
-            if results:
-                all_results[symbol] = results
-        
-        print(f"\n✅ 多股票策略分析完成")
-        return all_results
+        try:
+            # 加载推荐列表
+            recommendations = self.load_recommendations(csv_path=csv_path, days=days)
+            
+            if recommendations.empty:
+                print("⚠️ 没有找到推荐记录")
+                return []
+            
+            # 一次性构建所有股票的代码映射，提高效率
+            print("\n🔍 构建股票代码映射...")
+            stock_names = recommendations['股票名称'].unique().tolist()
+            stock_code_map = self._get_stock_code_map(stock_names)
+            print(f"✅ 已构建 {len(stock_code_map)} 个股票的代码映射\n")
+            
+            results = []
+            
+            # 对每条推荐进行回测
+            for idx, row in recommendations.iterrows():
+                stock_name = row['股票名称']
+                recommend_date = str(row['日期'])
+                reason = row.get('推荐原因', '')
+                
+                print(f"\n📊 [{idx + 1}/{len(recommendations)}] 回测股票: {stock_name} (推荐日期: {recommend_date})")
+                
+                result = self.backtest_stock(stock_name, recommend_date, stock_code_map=stock_code_map)
+                result['reason'] = reason
+                
+                results.append(result)
+            
+            print(f"\n✅ 完成所有股票回测，共 {len(results)} 条记录")
+            return results
+            
+        except Exception as e:
+            print(f"❌ 批量回测失败: {e}")
+            return []
+
+
+# 为了向后兼容，保留旧的类名
+IndividualStockBacktest = StockBacktest

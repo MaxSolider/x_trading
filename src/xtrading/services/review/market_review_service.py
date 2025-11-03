@@ -73,6 +73,10 @@ class MarketReviewService:
                 'status': 'success'
             }
             
+            # 5. 保存买入信号历史记录
+            print("💾 正在保存买入信号历史记录...")
+            self._save_buy_signals_history(date, sector_analysis, stock_analysis)
+            
             print(f"✅ 市场复盘分析完成，报告已生成: {report_path}")
             return result
             
@@ -154,7 +158,7 @@ class MarketReviewService:
         except Exception as e:
             print(f"❌ 提取关键指标失败: {e}")
             return {}
-
+    
     def _analyze_sector_performance(self, date: str) -> Dict[str, Any]:
         """
         分析板块表现 - 计算所有板块的量价数据和MACD数据并生成趋势图
@@ -168,7 +172,7 @@ class MarketReviewService:
         """
         try:
             from ...static.industry_sectors import INDUSTRY_SECTORS
-            from ...repositories.stock.industry_info_query import IndustryInfoQuery
+            from ...repositories.industry_info_query import IndustryInfoQuery
             from datetime import datetime, timedelta
             from concurrent.futures import ThreadPoolExecutor, as_completed
             
@@ -983,7 +987,7 @@ class MarketReviewService:
 
             # 3. 获取所有股票代码和名称的映射（一次性调用）
             print(f"\n📊 第二步：获取股票代码映射...")
-            from ...repositories.stock.stock_query import StockQuery
+            from ...repositories.stock_query import StockQuery
             stock_query = StockQuery()
             stock_map = self._build_stock_code_map(stock_query)
             
@@ -1034,10 +1038,218 @@ class MarketReviewService:
                 merged_results, stock_data_dict, date
             )
 
+            # 8. 分析重点关注股票
+            print(f"\n📊 第七步：分析重点关注股票...")
+            focus_stocks_analysis = self._analyze_focus_stocks(date, stock_map, stock_data_dict)
+            merged_results['focus_stocks'] = focus_stocks_analysis
+
             return merged_results
             
         except Exception as e:
             print(f"❌ 个股分析失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'failed',
+                'error': str(e),
+                'analysis_date': date
+            }
+    
+    def _analyze_focus_stocks(self, date: str, stock_map: Dict[str, str], 
+                             stock_data_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+        """
+        分析重点关注股票的量价关系和MACD指标
+        
+        Args:
+            date: 分析日期
+            stock_map: 股票名称到代码的映射字典
+            stock_data_dict: 股票数据字典，格式为 {股票代码: DataFrame}
+            
+        Returns:
+            Dict[str, Any]: 重点关注股票分析结果
+        """
+        try:
+            from ...static.focus_on_stocks import get_focus_on_stocks
+            from ...strategies.individual_stock.trend_tracking_strategy import IndividualTrendTrackingStrategy
+            from ...strategies.industry_sector.volume_price_strategy import VolumePriceStrategy
+            from ...repositories.stock_query import StockQuery
+            from datetime import datetime, timedelta
+            
+            # 获取重点关注股票列表
+            focus_stock_names = get_focus_on_stocks()
+            
+            if not focus_stock_names:
+                print("⚠️ 未配置重点关注股票")
+                return {
+                    'status': 'no_data',
+                    'message': '未配置重点关注股票',
+                    'analysis_date': date
+                }
+            
+            print(f"📌 找到 {len(focus_stock_names)} 只重点关注股票: {', '.join(focus_stock_names)}")
+            
+            focus_stocks_results = []
+            trend_strategy = IndividualTrendTrackingStrategy()
+            volume_price_strategy = VolumePriceStrategy()
+            stock_query = StockQuery()
+            
+            # 计算开始日期（近120天）
+            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=120)).strftime('%Y%m%d')
+            
+            for stock_name in focus_stock_names:
+                try:
+                    print(f"📊 正在分析重点关注股票: {stock_name}")
+                    
+                    # 1. 获取股票代码
+                    stock_code = stock_map.get(stock_name)
+                    if not stock_code:
+                        print(f"⚠️ 未找到 {stock_name} 的股票代码，跳过")
+                        continue
+                    
+                    # 2. 获取股票数据（如果不在stock_data_dict中，则单独查询）
+                    hist_data = stock_data_dict.get(stock_code)
+                    if hist_data is None or hist_data.empty:
+                        print(f"📊 {stock_name} ({stock_code}) 数据不在缓存中，单独查询...")
+                        hist_data = stock_query.get_historical_quotes(stock_code, start_date, date)
+                        if hist_data is None or hist_data.empty:
+                            print(f"⚠️ 无法获取 {stock_name} ({stock_code}) 的历史数据，跳过")
+                            continue
+                    
+                    # 3. 计算MACD指标
+                    macd_data = trend_strategy.calculate_macd(hist_data)
+                    if macd_data is None or macd_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) MACD计算失败，跳过")
+                        continue
+                    
+                    # 4. 计算移动平均线
+                    ma_data = trend_strategy.calculate_moving_averages(hist_data)
+                    if ma_data is None or ma_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) 移动平均线计算失败，跳过")
+                        continue
+                    
+                    # 5. 合并MACD和移动平均线数据
+                    # 确保两个DataFrame有相同的索引和行数
+                    combined_data = ma_data.copy()
+                    # 将MACD列添加到combined_data中（确保行数一致）
+                    if len(macd_data) == len(combined_data):
+                        for col in ['EMA_Fast', 'EMA_Slow', 'DIF', 'DEA', 'MACD']:
+                            if col in macd_data.columns:
+                                combined_data[col] = macd_data[col].values
+                    else:
+                        print(f"⚠️ {stock_name} ({stock_code}) MACD和移动平均线数据长度不一致，尝试对齐...")
+                        # 尝试通过索引对齐
+                        for col in ['EMA_Fast', 'EMA_Slow', 'DIF', 'DEA', 'MACD']:
+                            if col in macd_data.columns:
+                                combined_data[col] = macd_data[col]
+                    
+                    # 6. 生成MACD交易信号
+                    signal_data = trend_strategy.generate_trend_signals(combined_data)
+                    if signal_data is None or signal_data.empty:
+                        print(f"⚠️ {stock_name} ({stock_code}) 信号生成失败，跳过")
+                        continue
+                    
+                    # 7. 分析量价关系
+                    vp_analysis = volume_price_strategy._calculate_volume_price_relationship(hist_data)
+                    
+                    # 获取量价关系的信号信息
+                    vp_relationship = vp_analysis.get('latest_relationship', '未知')
+                    vp_signal_info = volume_price_strategy._get_volume_price_signal_info(vp_relationship)
+                    
+                    # 计算信号强度
+                    vp_price_change = vp_analysis.get('price_change_pct', 0)
+                    vp_volume_change = vp_analysis.get('volume_change_pct', 0)
+                    vp_ma_trend = vp_analysis.get('ma_trend', {})
+                    vp_volume_trend = vp_analysis.get('volume_trend', {})
+                    vp_volume_price_strength = vp_analysis.get('volume_price_strength', {})
+                    vp_signal_strength = volume_price_strategy._calculate_signal_strength(
+                        vp_relationship, vp_price_change, vp_volume_change,
+                        vp_ma_trend, vp_volume_trend, vp_volume_price_strength
+                    )
+                    
+                    # 8. 获取最新数据
+                    latest_data = signal_data.iloc[-1] if not signal_data.empty else None
+                    latest_macd = macd_data.iloc[-1] if not macd_data.empty else None
+                    
+                    if latest_data is None or latest_macd is None:
+                        print(f"⚠️ {stock_name} ({stock_code}) 无法获取最新数据，跳过")
+                        continue
+                    
+                    # 获取收盘价
+                    close_col = None
+                    for col in ['收盘', '收盘价', 'close', 'Close']:
+                        if col in hist_data.columns:
+                            close_col = col
+                            break
+                    
+                    # 获取成交量
+                    volume_col = None
+                    for col in ['成交量', 'volume', 'Volume']:
+                        if col in hist_data.columns:
+                            volume_col = col
+                            break
+                    
+                    # 构建分析结果
+                    stock_result = {
+                        'stock_name': stock_name,
+                        'stock_code': stock_code,
+                        'analysis_date': date,
+                        
+                        # MACD指标
+                        'macd_dif': float(latest_macd.get('DIF', 0)) if 'DIF' in latest_macd else 0,
+                        'macd_dea': float(latest_macd.get('DEA', 0)) if 'DEA' in latest_macd else 0,
+                        'macd_histogram': float(latest_macd.get('MACD', 0)) if 'MACD' in latest_macd else 0,
+                        'macd_status': str(latest_data.get('MACD_Status', 'NEUTRAL')),
+                        
+                        # 趋势状态
+                        'trend_status': str(latest_data.get('Trend_Status', 'SIDEWAYS')),
+                        'signal_type': str(latest_data.get('Signal_Type', 'HOLD')),
+                        
+                        # 移动平均线
+                        'sma_5': float(latest_data.get('SMA_5', 0)) if 'SMA_5' in latest_data else 0,
+                        'sma_20': float(latest_data.get('SMA_20', 0)) if 'SMA_20' in latest_data else 0,
+                        'sma_60': float(latest_data.get('SMA_60', 0)) if 'SMA_60' in latest_data else 0,
+                        
+                        # 价格和成交量
+                        'latest_close': float(hist_data.iloc[-1][close_col]) if close_col else 0,
+                        'latest_volume': float(hist_data.iloc[-1][volume_col]) if volume_col else 0,
+                        
+                        # 量价关系
+                        'vp_relationship': vp_relationship,
+                        'vp_price_change': vp_price_change,
+                        'vp_volume_change': vp_volume_change,
+                        'vp_signal_type': vp_signal_info.get('signal_type', 'UNKNOWN'),
+                        'vp_signal_strength': float(vp_signal_strength) if vp_signal_strength else 0,
+                        'vp_strength_level': vp_volume_price_strength.get('strength_level', '未知') if isinstance(vp_volume_price_strength, dict) else '未知',
+                    }
+                    
+                    focus_stocks_results.append(stock_result)
+                    print(f"✅ {stock_name} ({stock_code}) 分析完成")
+                    
+                except Exception as e:
+                    print(f"❌ 分析重点关注股票 {stock_name} 失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+            
+            if not focus_stocks_results:
+                return {
+                    'status': 'no_data',
+                    'message': '未成功分析任何重点关注股票',
+                    'analysis_date': date
+                }
+            
+            print(f"✅ 成功分析 {len(focus_stocks_results)}/{len(focus_stock_names)} 只重点关注股票")
+            
+            return {
+                'status': 'success',
+                'analysis_date': date,
+                'total_count': len(focus_stock_names),
+                'analyzed_count': len(focus_stocks_results),
+                'stocks': focus_stocks_results
+            }
+            
+        except Exception as e:
+            print(f"❌ 分析重点关注股票失败: {e}")
             import traceback
             traceback.print_exc()
             return {
@@ -1112,7 +1324,7 @@ class MarketReviewService:
             Dict[str, pd.DataFrame]: 股票代码到历史数据的映射
         """
         try:
-            from ...repositories.stock.stock_query import StockQuery
+            from ...repositories.stock_query import StockQuery
             from datetime import datetime, timedelta
             
             stock_query = StockQuery()
@@ -2056,6 +2268,256 @@ class MarketReviewService:
                 'error': str(e),
                 'analysis_date': date
             }
+    
+    def _save_buy_signals_history(self, date: str, sector_analysis: Dict[str, Any], 
+                                 stock_analysis: Dict[str, Any]) -> None:
+        """
+        保存买入信号历史记录到CSV文件
+        
+        Args:
+            date: 复盘日期
+            sector_analysis: 板块分析结果
+            stock_analysis: 股票分析结果
+        """
+        try:
+            history_dir = "reports/history"
+            os.makedirs(history_dir, exist_ok=True)
+            
+            # 保存板块买入信号
+            sectors_file = os.path.join(history_dir, "sectors_history.csv")
+            self._save_sectors_buy_signals(date, sector_analysis, sectors_file)
+            
+            # 保存股票买入信号
+            stocks_file = os.path.join(history_dir, "stocks_history.csv")
+            self._save_stocks_buy_signals(date, stock_analysis, stocks_file)
+            
+            print("✅ 买入信号历史记录保存完成")
+            
+        except Exception as e:
+            print(f"❌ 保存买入信号历史记录失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _save_sectors_buy_signals(self, date: str, sector_analysis: Dict[str, Any], 
+                                   file_path: str) -> None:
+        """
+        保存板块买入信号到CSV文件
+        
+        Args:
+            date: 复盘日期
+            sector_analysis: 板块分析结果
+            file_path: 保存文件路径
+        """
+        try:
+            sectors_data = []
+            
+            # 从合并结果中获取板块买入信号
+            vp_signal_summary = sector_analysis.get('vp_signal_summary', {})
+            macd_signal_summary = sector_analysis.get('macd_signal_summary', {})
+            
+            # 从量价分析获取买入信号板块（包括 BUY 和 STRONG_BUY）
+            vp_buy_sectors = vp_signal_summary.get('BUY', []) + vp_signal_summary.get('STRONG_BUY', [])
+            # 去重
+            vp_buy_sectors = list(set(vp_buy_sectors))
+            
+            for sector_name in vp_buy_sectors:
+                sectors_data.append({
+                    '板块名称': sector_name,
+                    '日期': date,
+                    '推荐原因': '量价策略'
+                })
+            
+            # 从MACD分析获取买入信号板块
+            macd_buy_sectors = macd_signal_summary.get('buy_signals', [])
+            for sector_name in macd_buy_sectors:
+                # 检查是否已存在（避免重复）
+                if not any(d['板块名称'] == sector_name and d['日期'] == date 
+                          for d in sectors_data):
+                    sectors_data.append({
+                        '板块名称': sector_name,
+                        '日期': date,
+                        '推荐原因': 'MACD策略'
+                    })
+                else:
+                    # 如果已存在，更新推荐原因为组合策略
+                    for d in sectors_data:
+                        if d['板块名称'] == sector_name and d['日期'] == date:
+                            if '组合' not in d['推荐原因']:
+                                d['推荐原因'] = f"{d['推荐原因']} + MACD策略"
+                            break
+            
+            if not sectors_data:
+                print("⚠️ 未找到板块买入信号")
+                return
+            
+            # 读取现有数据或创建新文件
+            if os.path.exists(file_path):
+                try:
+                    existing_df = pd.read_csv(file_path, encoding='utf-8-sig')
+                    # 确保必要的列存在
+                    if '板块名称' not in existing_df.columns or '日期' not in existing_df.columns:
+                        existing_df = pd.DataFrame(columns=['板块名称', '日期', '推荐原因'])
+                except Exception as e:
+                    print(f"⚠️ 读取现有文件失败，将创建新文件: {e}")
+                    existing_df = pd.DataFrame(columns=['板块名称', '日期', '推荐原因'])
+            else:
+                existing_df = pd.DataFrame(columns=['板块名称', '日期', '推荐原因'])
+            
+            # 将日期列转换为字符串类型以便比较
+            if not existing_df.empty:
+                existing_df['日期'] = existing_df['日期'].astype(str)
+            
+            # 根据日期+板块名判断是否已存在相同数据
+            new_data = []
+            existing_keys = set()
+            
+            if not existing_df.empty:
+                # 创建已存在数据的键集合（日期+板块名称）
+                existing_keys = set(zip(existing_df['日期'].astype(str), existing_df['板块名称'].astype(str)))
+            
+            skipped_count = 0
+            for item in sectors_data:
+                # 构建键：日期+板块名称
+                key = (str(item['日期']), str(item['板块名称']))
+                if key not in existing_keys:
+                    new_data.append(item)
+                else:
+                    skipped_count += 1
+            
+            if new_data:
+                # 追加新数据
+                new_df = pd.DataFrame(new_data)
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                combined_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+                print(f"✅ 已保存 {len(new_data)} 条板块买入信号到 {file_path}")
+                if skipped_count > 0:
+                    print(f"⚠️ 已跳过 {skipped_count} 条重复的板块买入信号（日期+板块名称已存在）")
+            else:
+                print(f"⚠️ 所有板块买入信号已存在（日期+板块名称重复），跳过保存")
+            
+        except Exception as e:
+            print(f"❌ 保存板块买入信号失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _save_stocks_buy_signals(self, date: str, stock_analysis: Dict[str, Any], 
+                                 file_path: str) -> None:
+        """
+        保存股票买入信号到CSV文件
+        只保存各策略TOP10的股票，与复盘报告中展示的列表保持一致
+        
+        Args:
+            date: 复盘日期
+            stock_analysis: 股票分析结果
+            file_path: 保存文件路径
+        """
+        try:
+            stocks_data = []
+            processed_stocks = set()  # 用于去重，避免同一股票因多个策略重复保存
+            
+            trend_tracking = stock_analysis.get('trend_tracking', {})
+            oversold_rebound = stock_analysis.get('oversold_rebound', {})
+            
+            # 从趋势追踪策略获取TOP10股票
+            if trend_tracking.get('status') == 'success':
+                trend_top_10 = trend_tracking.get('top_10', [])
+                for stock in trend_top_10:
+                    stock_code = stock.get('stock_code', '')
+                    stock_name = stock.get('stock_name', '')
+                    signal_type = stock.get('current_signal_type', 'HOLD')
+                    
+                    # 只保存有买入信号的股票
+                    if stock_name and signal_type in ['BUY', 'STRONG_BUY']:
+                        key = stock_name
+                        if key not in processed_stocks:
+                            stocks_data.append({
+                                '股票名称': stock_name,
+                                '日期': date,
+                                '推荐原因': '趋势追踪策略'
+                            })
+                            processed_stocks.add(key)
+            
+            # 从超跌反弹策略获取TOP10股票
+            if oversold_rebound.get('status') == 'success':
+                oversold_top_10 = oversold_rebound.get('top_10', [])
+                for stock in oversold_top_10:
+                    stock_code = stock.get('stock_code', '')
+                    stock_name = stock.get('stock_name', '')
+                    signal_type = stock.get('current_signal_type', 'HOLD')
+                    
+                    # 只保存有买入信号的股票
+                    if stock_name and signal_type in ['BUY', 'STRONG_BUY']:
+                        key = stock_name
+                        if key not in processed_stocks:
+                            stocks_data.append({
+                                '股票名称': stock_name,
+                                '日期': date,
+                                '推荐原因': '超跌反弹策略'
+                            })
+                            processed_stocks.add(key)
+                        else:
+                            # 如果已存在（同一个股票在两个策略的TOP10中），更新推荐原因为组合策略
+                            for item in stocks_data:
+                                if item['股票名称'] == stock_name and item['日期'] == date:
+                                    if '趋势追踪策略' in item['推荐原因']:
+                                        item['推荐原因'] = '趋势追踪策略 + 超跌反弹策略'
+                                    elif '超跌反弹策略' not in item['推荐原因']:
+                                        item['推荐原因'] = f"{item['推荐原因']} + 超跌反弹策略"
+                                    break
+            
+            if not stocks_data:
+                print("⚠️ 未找到股票买入信号")
+                return
+            
+            # 读取现有数据或创建新文件
+            if os.path.exists(file_path):
+                try:
+                    existing_df = pd.read_csv(file_path, encoding='utf-8-sig')
+                    # 确保必要的列存在
+                    if '股票名称' not in existing_df.columns or '日期' not in existing_df.columns:
+                        existing_df = pd.DataFrame(columns=['股票名称', '日期', '推荐原因'])
+                except Exception as e:
+                    print(f"⚠️ 读取现有文件失败，将创建新文件: {e}")
+                    existing_df = pd.DataFrame(columns=['股票名称', '日期', '推荐原因'])
+            else:
+                existing_df = pd.DataFrame(columns=['股票名称', '日期', '推荐原因'])
+            
+            # 将日期列转换为字符串类型以便比较
+            if not existing_df.empty:
+                existing_df['日期'] = existing_df['日期'].astype(str)
+            
+            # 根据日期+股票名判断是否已存在相同数据
+            new_data = []
+            existing_keys = set()
+            
+            if not existing_df.empty:
+                # 创建已存在数据的键集合（日期+股票名称）
+                existing_keys = set(zip(existing_df['日期'].astype(str), existing_df['股票名称'].astype(str)))
+            
+            skipped_count = 0
+            for item in stocks_data:
+                # 构建键：日期+股票名称
+                key = (str(item['日期']), str(item['股票名称']))
+                if key not in existing_keys:
+                    new_data.append(item)
+                else:
+                    skipped_count += 1
+            
+            if new_data:
+                # 追加新数据
+                new_df = pd.DataFrame(new_data)
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                combined_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+                print(f"✅ 已保存 {len(new_data)} 条股票买入信号到 {file_path}")
+                if skipped_count > 0:
+                    print(f"⚠️ 已跳过 {skipped_count} 条重复的股票买入信号（日期+股票名称已存在）")
+            else:
+                print(f"⚠️ 所有股票买入信号已存在（日期+股票名称重复），跳过保存")
+            
+        except Exception as e:
+            print(f"❌ 保存股票买入信号失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def print_review_summary(self, review_result: Dict[str, Any]) -> None:
         """

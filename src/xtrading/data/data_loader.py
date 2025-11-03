@@ -5,8 +5,8 @@ from typing import Optional
 
 import pandas as pd
 
-from xtrading.repositories.stock.industry_info_query import IndustryInfoQuery
-from xtrading.repositories.stock.stock_query import StockQuery
+from xtrading.repositories.industry_info_query import IndustryInfoQuery
+from xtrading.repositories.stock_query import StockQuery
 from xtrading.static.industry_sectors import INDUSTRY_SECTORS
 
 from .industry_history_dao import IndustryHistoryDAO

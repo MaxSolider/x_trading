@@ -288,6 +288,20 @@ class RadarChartGenerator:
             # 绘制主趋势线
             ax.plot(dates, values, marker='o', linewidth=2, markersize=4, color=color, label='趋势线')
             
+            # 在曲线上添加数值标签
+            for date, value in zip(dates, values):
+                # 计算标签位置，避免标签重叠
+                ax.annotate(f'{value:.1f}', 
+                          xy=(date, value),
+                          xytext=(0, 10),  # 标签位置在点的上方
+                          textcoords='offset points',
+                          ha='center',
+                          va='bottom',
+                          fontsize=8,
+                          fontweight='bold',
+                          color='black',
+                          bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7, edgecolor='none'))
+            
             # 绘制填充区域
             ax.fill_between(dates, values, alpha=0.3, color=color)
             

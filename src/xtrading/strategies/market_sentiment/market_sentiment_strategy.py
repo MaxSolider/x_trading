@@ -11,8 +11,8 @@ import os
 
 from openpyxl.styles.builtins import total
 
-from ...repositories.stock.market_overview_query import MarketOverviewQuery
-from ...repositories.stock.stock_query import StockQuery
+from ...repositories.market_overview_query import MarketOverviewQuery
+from ...repositories.stock_query import StockQuery
 from ...utils.date import DateUtils
 from ...utils.graphics.radar_chart_generator import RadarChartGenerator
 

@@ -6,7 +6,7 @@
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any, List
-from ...repositories.stock.industry_info_query import IndustryInfoQuery
+from ...repositories.industry_info_query import IndustryInfoQuery
 
 class IndustryMovingAverageStrategy:
     """行业板块移动平均策略类"""

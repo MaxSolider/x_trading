@@ -86,11 +86,6 @@ class MarketReportGenerator:
             radar_chart_path = market_summary.get('radar_chart_path')
             if radar_chart_path:
                 content.extend(self._build_radar_chart_section(radar_chart_path))
-
-            # 各维度情绪分数
-            sentiment_scores = market_summary.get('sentiment_scores', {})
-            if sentiment_scores:
-                content.extend(self._build_sentiment_scores_section(sentiment_scores))
             
             # 关键指标
             key_metrics = market_summary.get('key_metrics', {})
@@ -233,8 +228,8 @@ class MarketReportGenerator:
                 total_turnover = profit_effect['成交金额'].sum()
                 content.append(f"- **市场总成交金额**: {total_turnover:,.0f} 亿元")
                 
-                # 计算平均换手率
-                avg_turnover_rate = profit_effect['流通换手率'].mean()
+                # 计算平均换手率（数据已经是小数形式，需要乘以100显示为百分比）
+                avg_turnover_rate = profit_effect['流通换手率'].mean() * 100
                 content.append(f"- **平均流通换手率**: {avg_turnover_rate:.2f}%")
                 
                 # 各板块成交金额
@@ -621,7 +616,11 @@ class MarketReportGenerator:
                 macd_signal = sector_data.get('macd_signal_type', 'NEUTRAL')
                 combined_strength = sector_data.get('combined_signal_strength', 0)
                 
-                content.append(f"**量价信号**: {vp_signal}, **MACD信号**: {macd_signal}, **综合信号强度**: {combined_strength:.4f}")
+                # 转换为中文显示
+                vp_signal_cn = self._translate_signal_type(vp_signal)
+                macd_signal_cn = self._translate_signal_type(macd_signal)
+                
+                content.append(f"**量价信号**: {vp_signal_cn}, **MACD信号**: {macd_signal_cn}, **综合信号强度**: {combined_strength:.4f}")
                 content.append("")
                 
                 displayed_charts += 1
@@ -673,6 +672,80 @@ class MarketReportGenerator:
                 content.append(f"**目标板块**: {', '.join(target_sectors[:8])}{'...' if len(target_sectors) > 8 else ''}")
                 content.append("")
             
+            # === 重点关注股票分析 ===
+            focus_stocks = stock_analysis.get('focus_stocks', {})
+            if focus_stocks.get('status') == 'success':
+                content.append("## 📌 重点关注股票分析")
+                content.append("")
+                
+                stocks = focus_stocks.get('stocks', [])
+                total_count = focus_stocks.get('total_count', 0)
+                analyzed_count = focus_stocks.get('analyzed_count', 0)
+                
+                content.append(f"**重点关注股票总数**: {total_count} 只")
+                content.append(f"**成功分析**: {analyzed_count} 只")
+                content.append("")
+                
+                if stocks:
+                    # 创建表格展示关键信息
+                    table_data = [["股票名称", "最新价", "MACD状态", "趋势状态", "信号类型", "量价关系", "价格变化%", "成交量变化%", "量价信号"]]
+                    
+                    for stock in stocks:
+                        stock_name = stock.get('stock_name', '未知')
+                        stock_code = stock.get('stock_code', '未知')
+                        latest_close = stock.get('latest_close', 0)
+                        
+                        # MACD指标
+                        macd_status = stock.get('macd_status', 'NEUTRAL')
+                        
+                        # 趋势状态
+                        trend_status = stock.get('trend_status', 'SIDEWAYS')
+                        signal_type = stock.get('signal_type', 'HOLD')
+                        
+                        # 量价关系
+                        vp_relationship = stock.get('vp_relationship', '未知')
+                        vp_price_change = stock.get('vp_price_change', 0)
+                        vp_volume_change = stock.get('vp_volume_change', 0)
+                        vp_signal_type = stock.get('vp_signal_type', 'UNKNOWN')
+                        
+                        # 转换为中文显示
+                        macd_status_cn = self._translate_signal_type(macd_status)
+                        trend_status_cn = self._translate_signal_type(trend_status)
+                        signal_type_cn = self._translate_signal_type(signal_type)
+                        vp_signal_type_cn = self._translate_signal_type(vp_signal_type)
+                        
+                        # 显示股票名称和代码（表格中不使用换行符，使用空格分隔）
+                        stock_display = f"{stock_name}({stock_code})" if stock_code != '未知' else stock_name
+                        
+                        # 处理可能为空的值
+                        vp_relationship_display = vp_relationship if vp_relationship and vp_relationship != '未知' else '未知'
+                        
+                        table_data.append([
+                            stock_display,
+                            f"{latest_close:.2f}",
+                            macd_status_cn,
+                            trend_status_cn,
+                            signal_type_cn,
+                            vp_relationship_display,
+                            f"{vp_price_change:.2f}%" if vp_price_change else "0.00%",
+                            f"{vp_volume_change:.2f}%" if vp_volume_change else "0.00%",
+                            vp_signal_type_cn if vp_signal_type_cn != '未知' else '未知'
+                        ])
+                    
+                    content.append(self._generate_markdown_table(table_data))
+                    content.append("")
+                    
+            elif focus_stocks.get('status') == 'no_data':
+                content.append("## 📌 重点关注股票分析")
+                content.append("")
+                content.append(f"⚠️ {focus_stocks.get('message', '无重点关注股票数据')}")
+                content.append("")
+            elif focus_stocks.get('status') == 'failed':
+                content.append("## 📌 重点关注股票分析")
+                content.append("")
+                content.append(f"❌ 分析失败: {focus_stocks.get('error', '未知错误')}")
+                content.append("")
+            
             # === 趋势追踪策略结果 ===
             if trend_tracking.get('status') == 'success':
                 content.append("## 📈 趋势追踪策略 - TOP10股票")
@@ -692,12 +765,16 @@ class MarketReportGenerator:
                         latest_close = stock.get('latest_close', 0)
                         trend_strength = stock.get('trend_strength', 0)
                         
+                        # 转换为中文显示
+                        signal_type_cn = self._translate_signal_type(signal_type)
+                        trend_status_cn = self._translate_signal_type(trend_status)
+                        
                         table_data.append([
                             str(i),
                             stock_name,
                             sectors_str,
-                            signal_type,
-                            trend_status,
+                            signal_type_cn,
+                            trend_status_cn,
                             f"{signal_strength:.1f}",
                             f"{latest_close:.2f}",
                             f"{trend_strength:.2f}"
@@ -725,12 +802,16 @@ class MarketReportGenerator:
                         latest_close = stock.get('latest_close', 0)
                         oversold_strength = stock.get('oversold_strength', 0)
                         
+                        # 转换为中文显示
+                        signal_type_cn = self._translate_signal_type(signal_type)
+                        oversold_type_cn = self._translate_signal_type(oversold_type)
+                        
                         table_data.append([
                             str(i),
                             stock_name,
                             sectors_str,
-                            signal_type,
-                            oversold_type,
+                            signal_type_cn,
+                            oversold_type_cn,
                             f"{signal_strength:.1f}",
                             f"{latest_close:.2f}",
                             f"{oversold_strength:.2f}"
@@ -789,6 +870,40 @@ class MarketReportGenerator:
         content.append("")
         return content
     
+    def _translate_signal_type(self, signal_type: str) -> str:
+        """
+        将英文信号类型转换为中文
+        
+        Args:
+            signal_type: 英文信号类型
+            
+        Returns:
+            str: 中文信号类型
+        """
+        signal_map = {
+            # 量价信号和MACD信号
+            'BUY': '买入',
+            'SELL': '卖出',
+            'NEUTRAL': '中性',
+            'CAUTION': '谨慎',
+            'PANIC': '恐慌',
+            'UNKNOWN': '未知',
+            'HOLD': '持有',
+            # 个股信号类型
+            'STRONG_BUY': '强烈买入',
+            'STRONG_SELL': '强烈卖出',
+            # 趋势状态
+            'BULLISH': '看涨',
+            'BEARISH': '看跌',
+            'SIDEWAYS': '横盘',
+            # 超跌类型
+            'STRONG_OVERSOLD': '严重超跌',
+            'NORMAL_OVERSOLD': '一般超跌',
+            'KDJ_REBOUND': 'KDJ反弹',
+            'NONE': '无'
+        }
+        return signal_map.get(signal_type, signal_type)
+    
     def _generate_markdown_table(self, data: list) -> str:
         """
         生成Markdown格式的表格
@@ -845,7 +960,6 @@ class MarketReportGenerator:
         content.append("")
         content.append("- [📊 市场总结](#-市场总结)")
         content.append("  - [📈 市场情绪综合分析图](#-市场情绪综合分析图)")
-        content.append("  - [情绪维度分析](#情绪维度分析)")
         content.append("  - [关键市场指标](#关键市场指标)")
         content.append("    - [市场活跃度](#市场活跃度)")
         content.append("    - [个股赚钱效应](#个股赚钱效应)")

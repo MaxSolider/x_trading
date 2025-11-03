@@ -4,5 +4,6 @@
 """
 
 from .market_sentiment_strategy import MarketSentimentStrategy
+from .news_analysis_strategy import NewsAnalysisStrategy
 
-__all__ = ['MarketSentimentStrategy']
+__all__ = ['MarketSentimentStrategy', 'NewsAnalysisStrategy']

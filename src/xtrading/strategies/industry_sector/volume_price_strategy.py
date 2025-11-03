@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.font_manager import FontProperties
 
-from ...repositories.stock.stock_query import StockQuery
-from ...repositories.stock.industry_info_query import IndustryInfoQuery
-from ...repositories.stock.market_overview_query import MarketOverviewQuery
+from ...repositories.stock_query import StockQuery
+from ...repositories.industry_info_query import IndustryInfoQuery
+from ...repositories.market_overview_query import MarketOverviewQuery
 
 
 class VolumePriceStrategy:

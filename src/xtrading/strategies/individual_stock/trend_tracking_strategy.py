@@ -7,7 +7,7 @@
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any, List
-from ...repositories.stock.stock_query import StockQuery
+from ...repositories.stock_query import StockQuery
 
 class IndividualTrendTrackingStrategy:
     """个股趋势追踪策略类"""
