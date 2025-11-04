@@ -289,11 +289,7 @@ class MarketReviewService:
                 'PANIC': [],
                 'NEUTRAL': []
             }
-            
-            # 计算开始日期（获取最近60个交易日的数据，确保有足够数据计算MA20）
-            from datetime import datetime, timedelta
-            start_date = (datetime.strptime(date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
-            
+
             # 遍历所有板块
             for i, sector_name in enumerate(INDUSTRY_SECTORS, 1):
                 try:
