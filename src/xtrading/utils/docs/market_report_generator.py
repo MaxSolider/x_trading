@@ -842,19 +842,10 @@ class MarketReportGenerator:
                     chart_path = stock_chart_paths.get(chart_key)
                     
                     if chart_path:
-                        # 获取相对路径用于Markdown显示
-                        # 将绝对路径转换为相对路径（从reports目录开始）
-                        if chart_path.startswith('reports/'):
-                            relative_path = chart_path
-                        elif '/' in chart_path:
-                            # 如果是绝对路径，提取reports之后的部分
-                            if 'reports' in chart_path:
-                                idx = chart_path.find('reports')
-                                relative_path = chart_path[idx:]
-                            else:
-                                relative_path = chart_path
-                        else:
-                            relative_path = chart_path
+
+                        import os
+                        filename = os.path.basename(chart_path)
+                        relative_path = f"../images/stocks/{filename}"
                         
                         content.append(f"### {stock_name} ({stock_code})")
                         content.append("")
