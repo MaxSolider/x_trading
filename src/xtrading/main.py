@@ -85,7 +85,7 @@ def test_data_loader_service():
         print("✅ 行业板块数据加载完成")
 
         print("📥 开始加载股票近4个月数据...")
-        # loader.load_stock_history_last_4m()
+        loader.load_stock_history_last_4m()
         print("✅ 股票数据加载完成")
 
         duration = time.time() - start_ts
