@@ -114,15 +114,15 @@ def main():
 
     # 测试市场情绪分析
     # test_market_sentiment_analysis()
-    
+
+    # 测试数据加载服务
+    test_data_loader_service()
+
     # 测试市场复盘服务
     test_market_review_service()
     
     # 测试日期工具类
     # print(DateUtils.get_recent_trading_day('20251026'))
-
-    # 测试数据加载服务
-    # test_data_loader_service()
 
     # 运行回测服务
     # test_backtest()
